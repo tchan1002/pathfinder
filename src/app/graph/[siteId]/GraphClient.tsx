@@ -17,6 +17,13 @@ export default function GraphClient({ siteId }: { siteId: string }) {
   const [pages, setPages] = useState<PageNode[]>([]);
   const [selected, setSelected] = useState<PageNode | null>(null);
   const [loading, setLoading] = useState(true);
+  const [q, setQ] = useState("");
+  const [qLoading, setQLoading] = useState(false);
+  const [qError, setQError] = useState<string | null>(null);
+  const [qTop, setQTop] = useState<
+    | { url: string; title?: string; snippet?: string; screenshotUrl?: string; confidence: number }
+    | null
+  >(null);
 
   useEffect(() => {
     async function load() {
@@ -35,6 +42,50 @@ export default function GraphClient({ siteId }: { siteId: string }) {
     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
       <div>
         <h2 className="font-semibold mb-2">Site map</h2>
+        <form
+          className="mb-3 flex gap-2"
+          onSubmit={async (e) => {
+            e.preventDefault();
+            setQError(null);
+            if (!q.trim()) return;
+            setQLoading(true);
+            try {
+              const res = await fetch(`/api/query`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ siteId, question: q }),
+              });
+              if (!res.ok) throw new Error("Query failed");
+              const data = await res.json();
+              setQTop(data?.[0] || null);
+            } catch (err: any) {
+              setQError(err?.message || "Something went wrong");
+            } finally {
+              setQLoading(false);
+            }
+          }}
+        >
+          <input
+            className="border px-2 py-1 rounded flex-1"
+            placeholder="Ask a question about this site"
+            value={q}
+            onChange={(e) => setQ(e.target.value)}
+          />
+          <button className="bg-green-600 text-white px-3 py-1 rounded" disabled={qLoading}>
+            {qLoading ? "Asking..." : "Ask"}
+          </button>
+        </form>
+        {qError && <div className="text-sm text-red-600 mb-2">{qError}</div>}
+        {qTop && (
+          <div className="border rounded p-3 bg-gray-50 mb-3">
+            <div className="text-sm text-gray-500">Best match ({Math.round(qTop.confidence * 100)}%)</div>
+            <div className="font-medium">{qTop.title || qTop.url}</div>
+            {qTop.snippet && <p className="text-sm text-gray-700 mt-1 whitespace-pre-wrap">{qTop.snippet}</p>}
+            <a className="text-blue-600 underline text-sm mt-1 inline-block" href={qTop.url} target="_blank" rel="noreferrer">
+              Open page
+            </a>
+          </div>
+        )}
         {loading ? (
           <div>Loading...</div>
         ) : (

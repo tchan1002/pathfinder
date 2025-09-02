@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/prisma";
+import AskSite from "./AskSite";
 
 export default async function AdminPage() {
   const sites = await prisma.site.findMany({
@@ -28,6 +29,7 @@ export default async function AdminPage() {
                 <button className="bg-blue-600 text-white px-3 py-1 rounded" type="submit">Crawl</button>
               </form>
             </div>
+            <AskSite siteId={s.id} />
             <PagesTable siteId={s.id} />
           </div>
         ))}
