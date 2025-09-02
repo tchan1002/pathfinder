@@ -142,6 +142,23 @@ export async function crawlSite(args: { siteId: string; startUrl: string; onEven
           await prisma.summary.create({ data: { pageId: savedPage.id, text: summaryText, textHash: contentHash, model: "local-naive" } });
         }
 
+        // insert embedding if possible
+        if (content) {
+          try {
+            const clipped = content.slice(0, 8000);
+            const vec = await (await import("@/lib/embeddings")).embedText384(clipped);
+            const v = '[' + vec.map((n) => Number(n).toFixed(6)).join(',') + ']';
+            await prisma.$executeRawUnsafe(
+              `INSERT INTO "Embedding" (id, "pageId", content, vector, "createdAt", model) VALUES ($1, $2, $3, $4::vector, NOW(), $5)` ,
+              crypto.randomUUID(),
+              savedPage.id,
+              clipped,
+              v,
+              'text-embedding-3-small->384',
+            );
+          } catch {}
+        }
+
         onEvent?.({ type: "status", message: `saved ${current}` });
         onEvent?.({ type: "page", url: current, ok: true, pageId: savedPage.id, title: title ?? null, summary: summaryText ?? null, screenshotUrl: snapPath ?? null });
       } catch (err) {

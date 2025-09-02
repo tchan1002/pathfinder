@@ -118,15 +118,19 @@ export async function POST(req: NextRequest) {
 
         // embedding
         if (content) {
-          const vec = await embedText384(content.slice(0, 8000));
-          const v = '[' + vec.map((n) => Number(n).toFixed(6)).join(',') + ']';
-          await prisma.$executeRawUnsafe(
-            `INSERT INTO "Embedding" (id, "pageId", "createdAt", vector, model) VALUES ($1, $2, NOW(), $3::vector, $4)`,
-            crypto.randomUUID(),
-            savedPage.id,
-            v,
-            'text-embedding-3-small->384',
-          );
+          try {
+            const clipped = content.slice(0, 8000);
+            const vec = await embedText384(clipped);
+            const v = '[' + vec.map((n) => Number(n).toFixed(6)).join(',') + ']';
+            await prisma.$executeRawUnsafe(
+              `INSERT INTO "Embedding" (id, "pageId", content, vector, "createdAt", model) VALUES ($1, $2, $3, $4::vector, NOW(), $5)` ,
+              crypto.randomUUID(),
+              savedPage.id,
+              clipped,
+              v,
+              'text-embedding-3-small->384',
+            );
+          } catch {}
         }
 
         results.push({ url: current, ok: true });

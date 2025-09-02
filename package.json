@@ -5,7 +5,7 @@
   "scripts": {
     "dev": "next dev --turbopack",
     "postinstall": "prisma generate && npx playwright install",
-    "build": "prisma generate && next build --turbopack",
+    "build": "prisma generate && prisma migrate deploy && next build --turbopack",
     "start": "next start",
     "lint": "eslint",
     "prisma:generate": "prisma generate",
