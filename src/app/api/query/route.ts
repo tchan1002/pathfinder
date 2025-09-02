@@ -11,20 +11,21 @@ const BodySchema = z.object({
 });
 
 export async function POST(req: NextRequest) {
-  const json = await req.json().catch(() => undefined);
-  const parsed = BodySchema.safeParse(json);
-  if (!parsed.success) return NextResponse.json({ error: "Invalid body" }, { status: 400 });
-  const { siteId, question } = parsed.data;
+  try {
+    const json = await req.json().catch(() => undefined);
+    const parsed = BodySchema.safeParse(json);
+    if (!parsed.success) return NextResponse.json({ error: "Invalid body" }, { status: 400 });
+    const { siteId, question } = parsed.data;
 
-  const qVec = await embedText384(question);
-  const qVecLiteral = '[' + qVec.map((n) => Number(n).toFixed(6)).join(',') + ']';
+    const qVec = await embedText384(question);
+    const qVecLiteral = '[' + qVec.map((n) => Number(n).toFixed(6)).join(',') + ']';
 
   // Try vector search first
   let candidates: Array<{ url: string; title: string | null; summary: string | null; screenshot: string | null; confidence: number }>;
   try {
     candidates = await prisma.$queryRawUnsafe(
       `
-      SELECT p.url, p.title, s.text as summary, sn.screenshotPath as screenshot, 
+      SELECT p.url, p.title, s.text as summary, sn."screenshotPath" as screenshot, 
              1 - (e.vector <=> $1::vector) AS confidence
       FROM "Embedding" e
       JOIN "Page" p ON p.id = e."pageId"
@@ -43,7 +44,7 @@ export async function POST(req: NextRequest) {
     // Fallback: basic text match on summaries when Embedding or pgvector is unavailable
     candidates = await prisma.$queryRawUnsafe(
       `
-      SELECT p.url, p.title, s.text as summary, sn.screenshotPath as screenshot, 0.5 as confidence
+      SELECT p.url, p.title, s.text as summary, sn."screenshotPath" as screenshot, 0.5 as confidence
       FROM "Page" p
       LEFT JOIN "Summary" s ON s."pageId" = p.id
       LEFT JOIN LATERAL (
@@ -70,15 +71,19 @@ export async function POST(req: NextRequest) {
     .sort((a, b) => b.confidence - a.confidence)
     .slice(0, 20);
 
-  return NextResponse.json(
-    reranked.map((r) => ({
-      url: r.url,
-      title: r.title ?? undefined,
-      snippet: r.summary ?? undefined,
-      screenshotUrl: r.screenshot ?? undefined,
-      confidence: Number(r.confidence),
-    })),
-  );
+    return NextResponse.json(
+      reranked.map((r) => ({
+        url: r.url,
+        title: r.title ?? undefined,
+        snippet: r.summary ?? undefined,
+        screenshotUrl: r.screenshot ?? undefined,
+        confidence: Number(r.confidence),
+      })),
+    );
+  } catch (e) {
+    const message = e instanceof Error ? e.message : "Unknown error";
+    return NextResponse.json({ error: message }, { status: 500 });
+  }
 }
 
 

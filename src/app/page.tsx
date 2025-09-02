@@ -13,7 +13,11 @@ export default function Home() {
     const domain = new URL(url).hostname;
     try {
       const res = await fetch("/api/site", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ domain, startUrl: url }) });
-      if (!res.ok) throw new Error(`Create site failed: ${res.status}`);
+      if (!res.ok) {
+        let detail = "";
+        try { const j = await res.json(); detail = j?.error || ""; } catch {}
+        throw new Error(`Create site failed (${res.status})${detail ? `: ${detail}` : ""}`);
+      }
       const s = await res.json();
       setStatus("Crawling... (streaming updates)");
       const base = window.location.origin;

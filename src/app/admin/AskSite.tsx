@@ -20,7 +20,11 @@ export default function AskSite({ siteId }: { siteId: string }) {
 				headers: { "Content-Type": "application/json" },
 				body: JSON.stringify({ siteId, question }),
 			});
-			if (!res.ok) throw new Error("Query failed");
+			if (!res.ok) {
+				let detail = "";
+				try { const j = await res.json(); detail = j?.error || ""; } catch {}
+				throw new Error(`Query failed (${res.status})${detail ? `: ${detail}` : ""}`);
+			}
 			const data = await res.json();
 			setResults(data || []);
 		} catch (err) {

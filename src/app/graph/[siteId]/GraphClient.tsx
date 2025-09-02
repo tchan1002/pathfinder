@@ -30,7 +30,11 @@ export default function GraphClient({ siteId }: { siteId: string }) {
       setLoading(true);
       try {
         const res = await fetch(`/api/site/${siteId}/pages`);
-        if (!res.ok) throw new Error(`Failed to load pages: ${res.status}`);
+        if (!res.ok) {
+          let detail = "";
+          try { const j = await res.json(); detail = j?.error || ""; } catch {}
+          throw new Error(`Failed to load pages (${res.status})${detail ? `: ${detail}` : ""}`);
+        }
         const data: PageNode[] = await res.json();
         const safe = data.filter((p) => {
           try {
@@ -73,7 +77,11 @@ export default function GraphClient({ siteId }: { siteId: string }) {
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({ siteId, question: q }),
               });
-              if (!res.ok) throw new Error("Query failed");
+              if (!res.ok) {
+                let detail = "";
+                try { const j = await res.json(); detail = j?.error || ""; } catch {}
+                throw new Error(`Query failed (${res.status})${detail ? `: ${detail}` : ""}`);
+              }
               const data = await res.json();
               setQTop(data?.[0] || null);
             } catch (err) {
