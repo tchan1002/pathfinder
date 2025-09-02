@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import Link from "next/link";
 import AskSite from "./AskSite";
+import { revalidatePath } from "next/cache";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -17,7 +18,7 @@ export default async function AdminPage() {
       <form className="flex gap-2" action={createSite}>
         <input className="border px-2 py-1 rounded" type="text" name="domain" placeholder="example.com" required />
         <input className="border px-2 py-1 rounded" type="url" name="startUrl" placeholder="https://example.com" />
-        <button className="bg-black text-white px-3 py-1 rounded" type="submit">Add Site</button>
+        <button className="bg-black text-white px-3 py-1 rounded hover:bg-gray-800 active:bg-gray-900 transition-colors" type="submit">Add Site</button>
       </form>
       <div className="grid gap-6">
         {sites.map((s: { id: string; domain: string; pages: Array<{ id: string }> }) => (
@@ -31,7 +32,7 @@ export default async function AdminPage() {
               </div>
               <form action={deleteSite}>
                 <input type="hidden" name="siteId" value={s.id} />
-                <button className="bg-red-600 text-white px-3 py-1 rounded" type="submit">Delete</button>
+                <button className="bg-red-600 text-white px-3 py-1 rounded hover:bg-red-700 active:bg-red-800 transition-colors" type="submit">Delete</button>
               </form>
             </div>
             <AskSite siteId={s.id} />
@@ -62,6 +63,7 @@ async function deleteSite(formData: FormData) {
   try {
     await prisma.$executeRawUnsafe(`DELETE FROM "Embedding" WHERE "pageId" IN (SELECT id FROM "Page" WHERE "siteId" = $1)`, siteId);
   } catch {}
+  revalidatePath("/admin");
 }
 
 
