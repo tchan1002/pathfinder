@@ -3,8 +3,8 @@ import { prisma } from "@/lib/prisma";
 
 export const runtime = "nodejs";
 
-export async function GET(_req: NextRequest, { params }: { params: { siteId: string } }) {
-  const { siteId } = params;
+export async function GET(_req: NextRequest, context: { params: Promise<{ siteId: string }> }) {
+  const { siteId } = await context.params;
   const pages = await prisma.page.findMany({
     where: { siteId },
     orderBy: { url: "asc" },
