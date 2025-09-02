@@ -4,7 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "next dev --turbopack",
-    "postinstall": "prisma generate && npx playwright install --with-deps",
+    "postinstall": "prisma generate && npx playwright install",
     "build": "prisma generate && next build --turbopack",
     "start": "next start",
     "lint": "eslint",
