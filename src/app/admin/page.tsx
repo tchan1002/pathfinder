@@ -1,6 +1,9 @@
 import { prisma } from "@/lib/prisma";
 import AskSite from "./AskSite";
 
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
+
 export default async function AdminPage() {
   const sites = await prisma.site.findMany({
     include: { pages: { select: { id: true } } },
@@ -16,7 +19,7 @@ export default async function AdminPage() {
         <button className="bg-black text-white px-3 py-1 rounded" type="submit">Add Site</button>
       </form>
       <div className="grid gap-6">
-        {sites.map((s) => (
+        {sites.map((s: { id: string; domain: string; pages: Array<{ id: string }> }) => (
           <div key={s.id} className="border rounded p-4">
             <div className="flex items-center justify-between">
               <div>
@@ -50,7 +53,7 @@ async function PagesTable({ siteId }: { siteId: string }) {
         </tr>
       </thead>
       <tbody>
-        {pages.map((p) => (
+        {pages.map((p: { id: string; title: string | null; url: string; updatedAt: Date }) => (
           <tr key={p.id} className="border-t">
             <td className="py-1 pr-2 truncate max-w-[20rem]">{p.title}</td>
             <td className="py-1 pr-2 truncate max-w-[28rem]">
