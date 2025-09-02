@@ -24,6 +24,8 @@ export default function GraphClient({ siteId }: { siteId: string }) {
     | { url: string; title?: string; snippet?: string; screenshotUrl?: string; confidence: number }
     | null
   >(null);
+  const [qRest, setQRest] = useState<Array<{ url: string; title?: string; snippet?: string; screenshotUrl?: string; confidence: number }>>([]);
+  const [qSearched, setQSearched] = useState<boolean>(false);
 
   useEffect(() => {
     async function load() {
@@ -38,9 +40,6 @@ export default function GraphClient({ siteId }: { siteId: string }) {
         const data: PageNode[] = await res.json();
         const safe = data.filter((p) => {
           try {
-            // Validate URL and compute pathname safely
-            // If invalid, skip
-            // eslint-disable-next-line no-new
             new URL(p.url);
             return true;
           } catch {
@@ -71,6 +70,9 @@ export default function GraphClient({ siteId }: { siteId: string }) {
             setQError(null);
             if (!q.trim()) return;
             setQLoading(true);
+            setQSearched(true);
+            setQTop(null);
+            setQRest([]);
             try {
               const res = await fetch(`/api/query`, {
                 method: "POST",
@@ -82,8 +84,9 @@ export default function GraphClient({ siteId }: { siteId: string }) {
                 try { const j = await res.json(); detail = j?.error || ""; } catch {}
                 throw new Error(`Query failed (${res.status})${detail ? `: ${detail}` : ""}`);
               }
-              const data = await res.json();
-              setQTop(data?.[0] || null);
+              const data: Array<{ url: string; title?: string; snippet?: string; screenshotUrl?: string; confidence: number }> = await res.json();
+              setQTop((data || [])[0] || null);
+              setQRest((data || []).slice(1, 6));
             } catch (err) {
               const message = err instanceof Error ? err.message : "Something went wrong";
               setQError(message);
@@ -103,14 +106,41 @@ export default function GraphClient({ siteId }: { siteId: string }) {
           </button>
         </form>
         {qError && <div className="text-sm text-red-600 mb-2">{qError}</div>}
-        {qTop && (
-          <div className="border rounded p-3 bg-gray-50 mb-3">
-            <div className="text-sm text-gray-500">Best match ({Math.round(qTop.confidence * 100)}%)</div>
-            <div className="font-medium">{qTop.title || qTop.url}</div>
-            {qTop.snippet && <p className="text-sm text-gray-700 mt-1 whitespace-pre-wrap">{qTop.snippet}</p>}
-            <a className="text-blue-600 underline text-sm mt-1 inline-block" href={qTop.url} target="_blank" rel="noreferrer">
-              Open page
-            </a>
+        {(qLoading || qSearched) && (
+          <div className="mb-3 space-y-3">
+            {qLoading && <div className="text-sm text-gray-500">Searching…</div>}
+            {qTop && (
+              <div className="border rounded p-3 bg-gray-50">
+                <div className="text-sm text-gray-500">Best match ({Math.round(qTop.confidence * 100)}%)</div>
+                <div className="font-medium text-white">{qTop.title || qTop.url}</div>
+                {qTop.snippet && <p className="text-sm text-gray-300 mt-1 whitespace-pre-wrap">{qTop.snippet}</p>}
+                <a className="text-white hover:underline text-sm mt-1 inline-block" href={qTop.url} target="_blank" rel="noreferrer">
+                  Open page
+                </a>
+              </div>
+            )}
+            {!qLoading && qSearched && !qTop && qRest.length === 0 && (
+              <div className="text-sm text-gray-500">No results found.</div>
+            )}
+            {qRest.length > 0 && (
+              <div className="border rounded p-3 bg-gray-50">
+                <div className="text-xs text-gray-500 mb-2">Other matches</div>
+                <ul className="space-y-2">
+                  {qRest.map((r, i) => (
+                    <li key={`${r.url}-${i}`} className="text-sm">
+                      <div className="flex items-start justify-between gap-2">
+                        <div>
+                          <div className="font-medium text-white">{r.title || r.url}</div>
+                          {r.snippet && <div className="text-gray-300 line-clamp-2">{r.snippet}</div>}
+                        </div>
+                        <div className="text-gray-500 shrink-0">{Math.round(r.confidence * 100)}%</div>
+                      </div>
+                      <a className="text-white hover:underline text-xs" href={r.url} target="_blank" rel="noreferrer">Open</a>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
           </div>
         )}
         {loading ? (

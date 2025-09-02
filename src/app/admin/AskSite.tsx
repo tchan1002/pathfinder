@@ -61,6 +61,25 @@ export default function AskSite({ siteId }: { siteId: string }) {
 					</a>
 				</div>
 			)}
+			{results.length > 1 && (
+				<div className="mt-2">
+					<div className="text-xs text-gray-500 mb-1">Other matches</div>
+					<ul className="space-y-2">
+						{results.slice(1, 6).map((r, i) => (
+							<li key={`${r.url}-${i}`} className="text-sm">
+								<div className="flex items-start justify-between gap-2">
+									<div>
+										<div className="font-medium">{r.title || r.url}</div>
+										{r.snippet && <div className="text-gray-700 line-clamp-2">{r.snippet}</div>}
+									</div>
+									<div className="text-gray-500 shrink-0">{Math.round(r.confidence * 100)}%</div>
+								</div>
+								<a className="text-white hover:underline text-xs" href={r.url} target="_blank" rel="noreferrer">Open</a>
+							</li>
+						))}
+					</ul>
+				</div>
+			)}
 		</div>
 	);
 }
