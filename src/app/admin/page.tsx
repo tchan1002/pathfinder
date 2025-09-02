@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/prisma";
+import Link from "next/link";
 import AskSite from "./AskSite";
 
 export const dynamic = "force-dynamic";
@@ -23,7 +24,9 @@ export default async function AdminPage() {
           <div key={s.id} className="border rounded p-4">
             <div className="flex items-center justify-between">
               <div>
-                <div className="font-semibold">{s.domain}</div>
+                <Link href={`/graph/${s.id}`} className="font-semibold text-blue-600 hover:underline">
+                  {s.domain}
+                </Link>
                 <div className="text-sm text-gray-500">{s.pages.length} pages</div>
               </div>
               <form action={triggerCrawl}>
@@ -33,37 +36,10 @@ export default async function AdminPage() {
               </form>
             </div>
             <AskSite siteId={s.id} />
-            <PagesTable siteId={s.id} />
           </div>
         ))}
       </div>
     </div>
-  );
-}
-
-async function PagesTable({ siteId }: { siteId: string }) {
-  const pages = await prisma.page.findMany({ where: { siteId }, orderBy: { updatedAt: "desc" }, take: 100 });
-  return (
-    <table className="w-full text-left mt-4">
-      <thead>
-        <tr className="text-gray-500">
-          <th className="py-1">Title</th>
-          <th className="py-1">URL</th>
-          <th className="py-1">Updated</th>
-        </tr>
-      </thead>
-      <tbody>
-        {pages.map((p: { id: string; title: string | null; url: string; updatedAt: Date }) => (
-          <tr key={p.id} className="border-t">
-            <td className="py-1 pr-2 truncate max-w-[20rem]">{p.title}</td>
-            <td className="py-1 pr-2 truncate max-w-[28rem]">
-              <a className="text-blue-600 underline" href={p.url} target="_blank" rel="noreferrer">{p.url}</a>
-            </td>
-            <td className="py-1 pr-2">{new Date(p.updatedAt).toLocaleString()}</td>
-          </tr>
-        ))}
-      </tbody>
-    </table>
   );
 }
 
