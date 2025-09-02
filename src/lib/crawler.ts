@@ -2,6 +2,7 @@ import { prisma } from "@/lib/prisma";
 import { isSameOrigin, normalizeUrl } from "@/lib/url";
 import { extractMainContent } from "@/lib/extract";
 import { chromium } from "playwright";
+import { JSDOM } from "jsdom";
 import robotsParser from "robots-parser";
 import crypto from "node:crypto";
 
@@ -32,9 +33,19 @@ export async function crawlSite(args: { siteId: string; startUrl: string; onEven
   const toVisit = new Set<string>([normalizeUrl(startUrl)]);
   const visited = new Set<string>();
 
-  const browser = await chromium.launch();
-  const context = await browser.newContext({ viewport: { width: 1280, height: 720 } });
-  const page = await context.newPage();
+  let browser: import("playwright").Browser | null = null;
+  let context: import("playwright").BrowserContext | null = null;
+  let page: import("playwright").Page | null = null;
+  try {
+    browser = await chromium.launch();
+    context = await browser.newContext({ viewport: { width: 1280, height: 720 } });
+    page = await context.newPage();
+  } catch {
+    browser = null;
+    context = null;
+    page = null;
+    onEvent?.({ type: "status", message: "Playwright unavailable. Falling back to fetch-only crawl." });
+  }
 
   try {
     while (visited.size < 200 && toVisit.size > 0) {
@@ -50,20 +61,41 @@ export async function crawlSite(args: { siteId: string; startUrl: string; onEven
 
       try {
         onEvent?.({ type: "status", message: `crawling ${current}` });
-        await page.goto(current, { waitUntil: "domcontentloaded", timeout: 30000 });
-        const html = await page.content();
-        const { title, description, text } = extractMainContent(html);
-        const screenshot = await page.screenshot({ type: "jpeg", quality: 70 });
-
-        // queue links
-        const links = await page.$$eval("a[href]", (as) => as.map((a) => (a as HTMLAnchorElement).href));
-        for (const href of links) {
+        let html = "";
+        let screenshot: Buffer | null = null;
+        if (page) {
+          await page.goto(current, { waitUntil: "domcontentloaded", timeout: 30000 });
+          html = await page.content();
           try {
-            if (isSameOrigin(href, current)) {
-              toVisit.add(normalizeUrl(href));
-            }
-          } catch {}
+            screenshot = await page.screenshot({ type: "jpeg", quality: 70 });
+          } catch {
+            screenshot = null;
+          }
+          const links = await page.$$eval("a[href]", (as) => as.map((a) => (a as HTMLAnchorElement).href));
+          for (const href of links) {
+            try {
+              if (isSameOrigin(href, current)) {
+                toVisit.add(normalizeUrl(href));
+              }
+            } catch {}
+          }
+        } else {
+          const res = await fetch(current, { redirect: "follow" });
+          if (!res.ok) throw new Error(`fetch failed: ${res.status}`);
+          html = await res.text();
+          const dom = new JSDOM(html, { url: current });
+          const as = Array.from(dom.window.document.querySelectorAll("a[href]")) as HTMLAnchorElement[];
+          for (const a of as) {
+            const href = a.href;
+            try {
+              if (isSameOrigin(href, current)) {
+                toVisit.add(normalizeUrl(href));
+              }
+            } catch {}
+          }
         }
+
+        const { title, description, text } = extractMainContent(html);
 
         const urlNormalized = normalizeUrl(current);
         const content = text ?? "";
@@ -92,8 +124,13 @@ export async function crawlSite(args: { siteId: string; startUrl: string; onEven
           select: { id: true },
         });
 
-        const snapPath = await storeScreenshot(savedPage.id, screenshot);
-        await prisma.snapshot.create({ data: { pageId: savedPage.id, screenshotPath: snapPath } });
+        let snapPath: string | null = null;
+        if (screenshot) {
+          try {
+            snapPath = await storeScreenshot(savedPage.id, screenshot);
+            await prisma.snapshot.create({ data: { pageId: savedPage.id, screenshotPath: snapPath } });
+          } catch {}
+        }
 
         // naive summary cache
         const existingSummary = await prisma.summary
@@ -106,13 +143,13 @@ export async function crawlSite(args: { siteId: string; startUrl: string; onEven
         }
 
         onEvent?.({ type: "status", message: `saved ${current}` });
-        onEvent?.({ type: "page", url: current, ok: true, pageId: savedPage.id, title: title ?? null, summary: summaryText ?? null, screenshotUrl: snapPath });
+        onEvent?.({ type: "page", url: current, ok: true, pageId: savedPage.id, title: title ?? null, summary: summaryText ?? null, screenshotUrl: snapPath ?? null });
       } catch (err) {
         onEvent?.({ type: "page", url: current, ok: false, reason: (err as Error).message });
       }
     }
   } finally {
-    await browser.close();
+    if (browser) await browser.close();
   }
 
   onEvent?.({ type: "done" });
