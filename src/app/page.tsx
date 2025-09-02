@@ -3,7 +3,6 @@ import { useState } from "react";
 
 export default function Home() {
   const [url, setUrl] = useState("");
-  const [siteId, setSiteId] = useState<string | null>(null);
   const [status, setStatus] = useState<string>("");
   type Ev = { type: "status"; message: string } | { type: "page"; url: string; ok: boolean; title?: string | null } | { type: "done" };
   const [events, setEvents] = useState<Ev[]>([]);
@@ -16,7 +15,6 @@ export default function Home() {
       const res = await fetch("/api/site", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ domain, startUrl: url }) });
       if (!res.ok) throw new Error(`Create site failed: ${res.status}`);
       const s = await res.json();
-      setSiteId(s.id);
       setStatus("Crawling... (streaming updates)");
       const base = window.location.origin;
       const src = new EventSource(`${base}/api/crawl/stream?siteId=${encodeURIComponent(s.id)}&startUrl=${encodeURIComponent(url)}`);

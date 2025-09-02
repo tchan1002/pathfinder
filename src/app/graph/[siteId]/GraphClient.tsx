@@ -58,8 +58,9 @@ export default function GraphClient({ siteId }: { siteId: string }) {
               if (!res.ok) throw new Error("Query failed");
               const data = await res.json();
               setQTop(data?.[0] || null);
-            } catch (err: any) {
-              setQError(err?.message || "Something went wrong");
+            } catch (err) {
+              const message = err instanceof Error ? err.message : "Something went wrong";
+              setQError(message);
             } finally {
               setQLoading(false);
             }
@@ -138,7 +139,7 @@ function Tree({ node, onSelect }: { node: TreeNode; onSelect: (p: PageNode) => v
           <button className="text-xs px-1 rounded border" onClick={() => setCollapsed((v) => !v)}>{collapsed ? "+" : "–"}</button>
         )}
         {node.page ? (
-          <button className="text-left hover:underline" onClick={() => onSelect(node.page)}>
+          <button className="text-left hover:underline" onClick={() => onSelect(node.page!)}>
             {node.page.title || node.page.url}
           </button>
         ) : (

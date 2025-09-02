@@ -23,8 +23,9 @@ export default function AskSite({ siteId }: { siteId: string }) {
 			if (!res.ok) throw new Error("Query failed");
 			const data = await res.json();
 			setResults(data || []);
-		} catch (err: any) {
-			setError(err?.message || "Something went wrong");
+		} catch (err) {
+			const message = err instanceof Error ? err.message : "Something went wrong";
+			setError(message);
 		} finally {
 			setLoading(false);
 		}
