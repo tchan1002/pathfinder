@@ -15,11 +15,6 @@ export default async function AdminPage() {
   return (
     <div className="p-6 space-y-8">
       <h1 className="text-2xl font-bold">Admin</h1>
-      <form className="flex gap-2" action={createSite}>
-        <input className="border px-2 py-1 rounded" type="text" name="domain" placeholder="example.com" required />
-        <input className="border px-2 py-1 rounded" type="url" name="startUrl" placeholder="https://example.com" />
-        <button className="bg-black text-white px-3 py-1 rounded hover:bg-gray-800 active:bg-gray-900 transition-colors" type="submit">Add Site</button>
-      </form>
       <div className="grid gap-6">
         {sites.map((s: { id: string; domain: string; pages: Array<{ id: string }> }) => (
           <div key={s.id} className="border rounded p-4">
@@ -41,14 +36,6 @@ export default async function AdminPage() {
       </div>
     </div>
   );
-}
-
-async function createSite(formData: FormData) {
-  "use server";
-  const domain = String(formData.get("domain") || "").trim();
-  const startUrl = String(formData.get("startUrl") || "").trim() || null;
-  if (!domain) return;
-  await prisma.site.create({ data: { domain, startUrl } });
 }
 
 async function deleteSite(formData: FormData) {
