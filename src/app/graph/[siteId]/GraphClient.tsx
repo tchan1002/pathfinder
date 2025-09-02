@@ -28,10 +28,28 @@ export default function GraphClient({ siteId }: { siteId: string }) {
   useEffect(() => {
     async function load() {
       setLoading(true);
-      const res = await fetch(`/api/site/${siteId}/pages`);
-      const data = await res.json();
-      setPages(data);
-      setLoading(false);
+      try {
+        const res = await fetch(`/api/site/${siteId}/pages`);
+        if (!res.ok) throw new Error(`Failed to load pages: ${res.status}`);
+        const data: PageNode[] = await res.json();
+        const safe = data.filter((p) => {
+          try {
+            // Validate URL and compute pathname safely
+            // If invalid, skip
+            // eslint-disable-next-line no-new
+            new URL(p.url);
+            return true;
+          } catch {
+            return false;
+          }
+        });
+        setPages(safe);
+      } catch (e) {
+        setQError(e instanceof Error ? e.message : "Failed to load pages");
+        setPages([]);
+      } finally {
+        setLoading(false);
+      }
     }
     load();
   }, [siteId]);
