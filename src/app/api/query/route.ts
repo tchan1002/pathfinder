@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { embedText384 } from "@/lib/embeddings";
+import OpenAI from "openai";
 
 export const runtime = "nodejs";
 
@@ -71,15 +72,47 @@ export async function POST(req: NextRequest) {
     .sort((a, b) => b.confidence - a.confidence)
     .slice(0, 20);
 
-    return NextResponse.json(
-      reranked.map((r) => ({
+    let answer: string | null = null;
+    if (process.env.OPENAI_API_KEY) {
+      try {
+        const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+        const context = reranked
+          .slice(0, 3)
+          .map(
+            (r, i) =>
+              `[${i + 1}] ${r.title || r.url}\n${(r.summary || "").slice(0, 500)}`,
+          )
+          .join("\n\n");
+        const completion = await openai.chat.completions.create({
+          model: "gpt-4o-mini",
+          messages: [
+            {
+              role: "system",
+              content:
+                "You answer questions about a website using only the provided context. If the context is insufficient, say you don't know.",
+            },
+            {
+              role: "user",
+              content: `Question: ${question}\n\nContext:\n${context}`,
+            },
+          ],
+          temperature: 0.2,
+          max_tokens: 200,
+        });
+        answer = completion.choices[0]?.message.content?.trim() || null;
+      } catch {}
+    }
+
+    return NextResponse.json({
+      answer: answer ?? undefined,
+      sources: reranked.map((r) => ({
         url: r.url,
         title: r.title ?? undefined,
         snippet: r.summary ?? undefined,
         screenshotUrl: r.screenshot ?? undefined,
         confidence: Number(r.confidence),
       })),
-    );
+    });
   } catch (e) {
     const message = e instanceof Error ? e.message : "Unknown error";
     return NextResponse.json({ error: message }, { status: 500 });

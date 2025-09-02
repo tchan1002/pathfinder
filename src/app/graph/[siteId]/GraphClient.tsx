@@ -20,6 +20,7 @@ export default function GraphClient({ siteId }: { siteId: string }) {
   const [q, setQ] = useState("");
   const [qLoading, setQLoading] = useState(false);
   const [qError, setQError] = useState<string | null>(null);
+  const [qAnswer, setQAnswer] = useState<string | null>(null);
   const [qTop, setQTop] = useState<
     | { url: string; title?: string; snippet?: string; screenshotUrl?: string; confidence: number }
     | null
@@ -73,6 +74,7 @@ export default function GraphClient({ siteId }: { siteId: string }) {
             setQSearched(true);
             setQTop(null);
             setQRest([]);
+            setQAnswer(null);
             try {
               const res = await fetch(`/api/query`, {
                 method: "POST",
@@ -84,9 +86,11 @@ export default function GraphClient({ siteId }: { siteId: string }) {
                 try { const j = await res.json(); detail = j?.error || ""; } catch {}
                 throw new Error(`Query failed (${res.status})${detail ? `: ${detail}` : ""}`);
               }
-              const data: Array<{ url: string; title?: string; snippet?: string; screenshotUrl?: string; confidence: number }> = await res.json();
-              setQTop((data || [])[0] || null);
-              setQRest((data || []).slice(1, 6));
+              const data = await res.json();
+              setQAnswer(data?.answer || null);
+              const src = data?.sources || [];
+              setQTop((src || [])[0] || null);
+              setQRest((src || []).slice(1, 6));
             } catch (err) {
               const message = err instanceof Error ? err.message : "Something went wrong";
               setQError(message);
@@ -109,6 +113,12 @@ export default function GraphClient({ siteId }: { siteId: string }) {
         {(qLoading || qSearched) && (
           <div className="mb-3 space-y-3">
             {qLoading && <div className="text-sm text-gray-500">Searching…</div>}
+            {qAnswer && (
+              <div className="border rounded p-3 bg-gray-50">
+                <div className="font-medium text-white">Answer</div>
+                <p className="text-sm text-gray-300 mt-1 whitespace-pre-wrap">{qAnswer}</p>
+              </div>
+            )}
             {qTop && (
               <div className="border rounded p-3 bg-gray-50">
                 <div className="text-sm text-gray-500">Best match ({Math.round(qTop.confidence * 100)}%)</div>

@@ -38,7 +38,13 @@
       var res = await fetch(base + '/api/query', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ siteId: siteId, question: question }) });
       var data = await res.json();
       results.innerHTML='';
-      data.forEach(function(row){
+      if(data.answer){
+        var ans=document.createElement('div');
+        ans.textContent=data.answer;
+        ans.style.padding='8px 6px';
+        results.appendChild(ans);
+      }
+      (data.sources || []).forEach(function(row){
         var item=document.createElement('div'); item.style.padding='8px 6px'; item.style.borderTop='1px solid #eee';
         var a=document.createElement('a'); a.href=row.url; a.textContent=row.title || row.url; a.style.fontWeight='600'; a.style.display='block'; a.addEventListener('click', function(e){ e.preventDefault(); window.location=row.url; }); item.appendChild(a);
         if(row.snippet){ var p=document.createElement('div'); p.textContent=row.snippet; p.style.fontSize='12px'; p.style.color='#444'; item.appendChild(p); }
