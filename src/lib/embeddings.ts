@@ -2,6 +2,11 @@ import OpenAI from "openai";
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
+export function normalizeVec(input: number[]): number[] {
+  const norm = Math.sqrt(input.reduce((s, x) => s + x * x, 0)) || 1;
+  return input.map((x) => x / norm);
+}
+
 export async function embedText384(text: string): Promise<number[]> {
   // Use a 384-dim model (e.g., text-embedding-3-small is 1536). For 384-dim, swap to a provider/model you prefer.
   // For MVP, we can down-project via averaging chunks to 384 for storage; simple PCA-like reduction.

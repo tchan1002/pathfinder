@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
-import { embedText384 } from "@/lib/embeddings";
+import { embedText384, normalizeVec } from "@/lib/embeddings";
 import OpenAI from "openai";
 
 export const runtime = "nodejs";
@@ -11,6 +11,16 @@ const BodySchema = z.object({
   question: z.string().min(1),
 });
 
+type Candidate = {
+  url: string;
+  title: string | null;
+  summary: string | null;
+  screenshot: string | null;
+  vconf?: number;
+  lconf?: number;
+  confidence?: number;
+};
+
 export async function POST(req: NextRequest) {
   try {
     const json = await req.json().catch(() => undefined);
@@ -18,28 +28,35 @@ export async function POST(req: NextRequest) {
     if (!parsed.success) return NextResponse.json({ error: "Invalid body" }, { status: 400 });
     const { siteId, question } = parsed.data;
 
-    const qVec = await embedText384(question);
+    const qVecRaw = await embedText384(question);
+    const qVec = normalizeVec(qVecRaw);
     const qVecLiteral = '[' + qVec.map((n) => Number(n).toFixed(6)).join(',') + ']';
 
   // Try vector search first
-  let candidates: Array<{ url: string; title: string | null; summary: string | null; screenshot: string | null; confidence: number }>;
+  let candidates: Candidate[];
   try {
+    await prisma.$executeRawUnsafe(`SET LOCAL ivfflat.probes = 10`);
     candidates = await prisma.$queryRawUnsafe(
       `
-      SELECT p.url, p.title, s.text as summary, sn."screenshotPath" as screenshot, 
-             1 - (e.vector <=> $1::vector) AS confidence
-      FROM "Embedding" e
-      JOIN "Page" p ON p.id = e."pageId"
-      LEFT JOIN "Summary" s ON s."pageId" = p.id
-      LEFT JOIN LATERAL (
-        SELECT * FROM "Snapshot" sn WHERE sn."pageId" = p.id ORDER BY sn."createdAt" DESC LIMIT 1
-      ) sn ON true
-      WHERE p."siteId" = $2
-      ORDER BY e.vector <=> $1::vector
-      LIMIT 20
-      `,
+  SELECT p.url,
+         p.title,
+         s.text AS summary,
+         sn."screenshotPath" AS screenshot,
+         1 - (e.vector <> $1::vector) AS vconf,  -- cosine similarity in [0,1] if unit vectors
+         COALESCE(ts_rank(s.tsv, plainto_tsquery('english', $3)), 0) AS lconf
+  FROM "Embedding" e
+  JOIN "Page" p ON p.id = e."pageId"
+  LEFT JOIN "Summary" s ON s."pageId" = p.id
+  LEFT JOIN LATERAL (
+    SELECT * FROM "Snapshot" sn WHERE sn."pageId" = p.id ORDER BY sn."createdAt" DESC LIMIT 1
+  ) sn ON true
+  WHERE p."siteId" = $2
+  ORDER BY e.vector <> $1::vector ASC
+  LIMIT 100
+  `,
       qVecLiteral,
       siteId,
+      question
     );
   } catch {
     // Fallback: basic text match on summaries when Embedding or pgvector is unavailable
@@ -52,36 +69,51 @@ export async function POST(req: NextRequest) {
         SELECT * FROM "Snapshot" sn WHERE sn."pageId" = p.id ORDER BY sn."createdAt" DESC LIMIT 1
       ) sn ON true
       WHERE p."siteId" = $1
-      LIMIT 50
+      LIMIT 100
       `,
       siteId,
     );
   }
 
-  // lightweight rerank: prefer entries whose summary shares tokens with the question
+  const alpha = 0.8; // semantic weight
+  const beta = 0.2; // lexical weight
+
   const qTokens = new Set(question.toLowerCase().split(/[^a-z0-9]+/g).filter(Boolean));
-  const reranked = candidates
+
+  const scored = candidates
     .map((r) => {
+      const v = Math.max(0, Math.min(1, Number(r.vconf ?? r.confidence ?? 0)));
+      const l = Math.max(0, Math.min(1, Number(r.lconf ?? 0)));
+
+      // Title boost if any query token is in title
+      const title = (r.title ?? "").toLowerCase();
+      const hasTitleHit = [...qTokens].some((t) => t.length > 2 && title.includes(t));
+      const titleBoost = hasTitleHit ? 0.05 : 0;
+
+      // Token-overlap bonus using summary
       const s = (r.summary as string | null) ?? "";
       const sTokens = new Set(s.toLowerCase().split(/[^a-z0-9]+/g).filter(Boolean));
       let overlap = 0;
       for (const t of qTokens) if (sTokens.has(t)) overlap++;
-      const bonus = overlap / Math.max(3, qTokens.size);
-      return { ...r, confidence: Math.min(1, Math.max(0, Number(r.confidence) + bonus * 0.2)) };
+      const overlapBonus = (overlap / Math.max(3, qTokens.size)) * 0.1; // smaller than before
+
+      const confidence = Math.max(0, Math.min(1, alpha * v + beta * l + titleBoost + overlapBonus));
+      return { ...r, confidence };
     })
-    .sort((a, b) => b.confidence - a.confidence)
+    .sort((a, b) => Number(b.confidence) - Number(a.confidence))
     .slice(0, 20);
 
     let answer: string | null = null;
     if (process.env.OPENAI_API_KEY) {
       try {
         const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
-        const context = reranked
+        const context = scored
           .slice(0, 3)
-          .map(
-            (r, i) =>
-              `[${i + 1}] ${r.title || r.url}\n${(r.summary || "").slice(0, 500)}`,
-          )
+          .map((r, i) => {
+            const body = (r.summary ?? "").toString();
+            const snippet = body.slice(0, 1200); // feed more content
+            return `[${i + 1}] ${r.title || r.url}\nURL: ${r.url}\n${snippet}`;
+          })
           .join("\n\n");
         const completion = await openai.chat.completions.create({
           model: "gpt-4o-mini",
@@ -89,11 +121,11 @@ export async function POST(req: NextRequest) {
             {
               role: "system",
               content:
-                "You answer questions about a website using only the provided context. If the context is insufficient, say you don't know.",
+                "You answer questions about a website using ONLY the provided sources. Cite sources like [1], [2]. If info is missing, say you don't know.",
             },
             {
               role: "user",
-              content: `Question: ${question}\n\nContext:\n${context}`,
+              content: `Question: ${question}\n\nSources:\n${context}`,
             },
           ],
           temperature: 0.2,
@@ -105,7 +137,7 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({
       answer: answer ?? undefined,
-      sources: reranked.map((r) => ({
+      sources: scored.map((r) => ({
         url: r.url,
         title: r.title ?? undefined,
         snippet: r.summary ?? undefined,

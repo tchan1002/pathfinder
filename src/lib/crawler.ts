@@ -146,7 +146,9 @@ export async function crawlSite(args: { siteId: string; startUrl: string; onEven
         if (content) {
           try {
             const clipped = content.slice(0, 8000);
-            const vec = await (await import("@/lib/embeddings")).embedText384(clipped);
+            const { embedText384, normalizeVec } = await import("@/lib/embeddings");
+            const vecRaw = await embedText384(clipped);
+            const vec = normalizeVec(vecRaw);
             const v = '[' + vec.map((n) => Number(n).toFixed(6)).join(',') + ']';
             await prisma.$executeRawUnsafe(
               `INSERT INTO "Embedding" (id, "pageId", content, vector, "createdAt", model) VALUES ($1, $2, $3, $4::vector, NOW(), $5)` ,

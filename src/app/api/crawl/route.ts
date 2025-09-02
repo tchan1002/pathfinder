@@ -6,7 +6,7 @@ import { chromium } from "playwright";
 import robotsParser from "robots-parser";
 import crypto from "node:crypto";
 import { extractMainContent } from "@/lib/extract";
-import { embedText384, summarizeText } from "@/lib/embeddings";
+import { embedText384, summarizeText, normalizeVec } from "@/lib/embeddings";
 
 export const runtime = "nodejs";
 
@@ -120,7 +120,8 @@ export async function POST(req: NextRequest) {
         if (content) {
           try {
             const clipped = content.slice(0, 8000);
-            const vec = await embedText384(clipped);
+            const vecRaw = await embedText384(clipped);
+            const vec = normalizeVec(vecRaw);
             const v = '[' + vec.map((n) => Number(n).toFixed(6)).join(',') + ']';
             await prisma.$executeRawUnsafe(
               `INSERT INTO "Embedding" (id, "pageId", content, vector, "createdAt", model) VALUES ($1, $2, $3, $4::vector, NOW(), $5)` ,
