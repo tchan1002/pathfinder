@@ -24,15 +24,14 @@ export default async function AdminPage() {
           <div key={s.id} className="border rounded p-4">
             <div className="flex items-center justify-between">
               <div>
-                <Link href={`/graph/${s.id}`} className="font-semibold text-blue-600 hover:underline">
+                <Link href={`/graph/${s.id}`} className="font-semibold text-white hover:underline">
                   {s.domain}
                 </Link>
                 <div className="text-sm text-gray-500">{s.pages.length} pages</div>
               </div>
-              <form action={triggerCrawl}>
+              <form action={deleteSite}>
                 <input type="hidden" name="siteId" value={s.id} />
-                <input type="url" name="startUrl" placeholder="https://{s.domain}" className="border px-2 py-1 rounded mr-2" />
-                <button className="bg-blue-600 text-white px-3 py-1 rounded" type="submit">Crawl</button>
+                <button className="bg-red-600 text-white px-3 py-1 rounded" type="submit">Delete</button>
               </form>
             </div>
             <AskSite siteId={s.id} />
@@ -51,18 +50,18 @@ async function createSite(formData: FormData) {
   await prisma.site.create({ data: { domain, startUrl } });
 }
 
-async function triggerCrawl(formData: FormData) {
+async function deleteSite(formData: FormData) {
   "use server";
   const siteId = String(formData.get("siteId") || "");
-  const startUrl = String(formData.get("startUrl") || "");
   if (!siteId) return;
-  const url = startUrl || (await prisma.site.findUnique({ where: { id: siteId } }))?.startUrl || `https://${(await prisma.site.findUnique({ where: { id: siteId } }))?.domain}`;
-  if (!url) return;
-  await fetch(`${process.env.NEXT_PUBLIC_BASE_URL || "http://localhost:3000"}/api/crawl`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ siteId, startUrl: url }),
-  });
+  // Delete site; cascades remove pages, snapshots, summaries
+  try {
+    await prisma.site.delete({ where: { id: siteId } });
+  } catch {}
+  // Optionally clean embeddings if present (best-effort, ignore errors)
+  try {
+    await prisma.$executeRawUnsafe(`DELETE FROM "Embedding" WHERE "pageId" IN (SELECT id FROM "Page" WHERE "siteId" = $1)`, siteId);
+  } catch {}
 }
 
 

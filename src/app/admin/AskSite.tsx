@@ -52,7 +52,7 @@ export default function AskSite({ siteId }: { siteId: string }) {
 					<div className="text-sm text-gray-500">Best match ({Math.round(top.confidence * 100)}%)</div>
 					<div className="font-medium">{top.title || top.url}</div>
 					{top.snippet && <p className="text-sm text-gray-700 mt-1 whitespace-pre-wrap">{top.snippet}</p>}
-					<a className="text-blue-600 underline text-sm mt-1 inline-block" href={top.url} target="_blank" rel="noreferrer">
+					<a className="text-white hover:underline text-sm mt-1 inline-block" href={top.url} target="_blank" rel="noreferrer">
 						Open page
 					</a>
 				</div>
