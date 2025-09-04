@@ -18,31 +18,49 @@ export async function POST(req: NextRequest) {
     if (!parsed.success) return NextResponse.json({ error: "Invalid body" }, { status: 400 });
     const { siteId, question } = parsed.data;
 
-    const qVec = await embedText384(question);
-    const qVecLiteral = '[' + qVec.map((n) => Number(n).toFixed(6)).join(',') + ']';
+    let qVecLiteral: string | null = null;
+    try {
+      const qVec = await embedText384(question);
+      qVecLiteral = '[' + qVec.map((n) => Number(n).toFixed(6)).join(',') + ']';
+    } catch {}
 
-  // Try vector search first
+  // Try vector search first if we have an embedding; otherwise fall back
   let candidates: Array<{ url: string; title: string | null; summary: string | null; screenshot: string | null; confidence: number }>;
-  try {
-    candidates = await prisma.$queryRawUnsafe(
-      `
-      SELECT p.url, p.title, s.text as summary, sn."screenshotPath" as screenshot, 
-             1 - (e.vector <=> $1::vector) AS confidence
-      FROM "Embedding" e
-      JOIN "Page" p ON p.id = e."pageId"
-      LEFT JOIN "Summary" s ON s."pageId" = p.id
-      LEFT JOIN LATERAL (
-        SELECT * FROM "Snapshot" sn WHERE sn."pageId" = p.id ORDER BY sn."createdAt" DESC LIMIT 1
-      ) sn ON true
-      WHERE p."siteId" = $2
-      ORDER BY e.vector <=> $1::vector
-      LIMIT 20
-      `,
-      qVecLiteral,
-      siteId,
-    );
-  } catch {
-    // Fallback: basic text match on summaries when Embedding or pgvector is unavailable
+  if (qVecLiteral) {
+    try {
+      candidates = await prisma.$queryRawUnsafe(
+        `
+        SELECT p.url, p.title, s.text as summary, sn."screenshotPath" as screenshot, 
+               1 - (e.vector <=> $1::vector) AS confidence
+        FROM "Embedding" e
+        JOIN "Page" p ON p.id = e."pageId"
+        LEFT JOIN "Summary" s ON s."pageId" = p.id
+        LEFT JOIN LATERAL (
+          SELECT * FROM "Snapshot" sn WHERE sn."pageId" = p.id ORDER BY sn."createdAt" DESC LIMIT 1
+        ) sn ON true
+        WHERE p."siteId" = $2
+        ORDER BY e.vector <=> $1::vector
+        LIMIT 20
+        `,
+        qVecLiteral,
+        siteId,
+      );
+    } catch {
+      candidates = await prisma.$queryRawUnsafe(
+        `
+        SELECT p.url, p.title, s.text as summary, sn."screenshotPath" as screenshot, 0.5 as confidence
+        FROM "Page" p
+        LEFT JOIN "Summary" s ON s."pageId" = p.id
+        LEFT JOIN LATERAL (
+          SELECT * FROM "Snapshot" sn WHERE sn."pageId" = p.id ORDER BY sn."createdAt" DESC LIMIT 1
+        ) sn ON true
+        WHERE p."siteId" = $1
+        LIMIT 50
+        `,
+        siteId,
+      );
+    }
+  } else {
     candidates = await prisma.$queryRawUnsafe(
       `
       SELECT p.url, p.title, s.text as summary, sn."screenshotPath" as screenshot, 0.5 as confidence
