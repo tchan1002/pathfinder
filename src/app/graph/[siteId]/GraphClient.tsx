@@ -20,7 +20,7 @@ export default function GraphClient({ siteId }: { siteId: string }) {
   const [q, setQ] = useState("");
   const [qLoading, setQLoading] = useState(false);
   const [qError, setQError] = useState<string | null>(null);
-  const [qAnswer, setQAnswer] = useState<string | null>(null); // kept for future use
+  const [_qAnswer, setQAnswer] = useState<string | null>(null); // kept for future use
   const [qResults, setQResults] = useState<Array<{ url: string; title?: string; snippet?: string; screenshotUrl?: string; similarity?: number | string; distance?: number | string | null }>>([]);
   const [qSearched, setQSearched] = useState<boolean>(false);
 

@@ -51,7 +51,9 @@ export async function POST(req: NextRequest) {
 
   try {
     while (visited.size < 200 && toVisit.size > 0) {
-      const current = [...toVisit][0];
+      const iter = toVisit.values();
+      const current = iter.next().value as string | undefined;
+      if (!current) break;
       toVisit.delete(current);
       if (visited.has(current)) continue;
       visited.add(current);
