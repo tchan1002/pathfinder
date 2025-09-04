@@ -4,7 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "next dev --turbopack",
-    "postinstall": "prisma generate && npx playwright install",
+    "postinstall": "prisma generate && if [ -z \"$CI\" ]; then npx playwright install; else echo 'Skipping playwright install in CI'; fi",
     "build": "prisma generate && prisma migrate deploy && next build --turbopack",
     "start": "next start",
     "lint": "eslint",

@@ -14,12 +14,20 @@ export async function embedText384(text: string): Promise<number[]> {
       let h = 2166136261;
       for (let i = 0; i < tok.length; i++) h = (h ^ tok.charCodeAt(i)) * 16777619;
       const idx = Math.abs(h | 0) % target;
-      buckets[idx] += 1;
+      if (idx >= 0 && idx < buckets.length) {
+        buckets[idx] = (buckets[idx] ?? 0) + 1;
+      }
     }
     let norm = 0;
-    for (let i = 0; i < target; i++) norm += buckets[i] * buckets[i];
+    for (let i = 0; i < target; i++) {
+      const v = buckets[i] ?? 0;
+      norm += v * v;
+    }
     norm = Math.sqrt(norm) || 1;
-    for (let i = 0; i < target; i++) buckets[i] /= norm;
+    for (let i = 0; i < target; i++) {
+      const v = buckets[i] ?? 0;
+      buckets[i] = v / norm;
+    }
     return Array.from(buckets);
   }
 
@@ -30,14 +38,17 @@ export async function embedText384(text: string): Promise<number[]> {
   });
   const vec = embedding.data[0]?.embedding ?? [];
   if (vec.length === target) return vec;
-  const buckets: number[] = new Array(target).fill(0);
-  const counts: number[] = new Array(target).fill(0);
+  const buckets: number[] = new Array<number>(target).fill(0);
+  const counts: number[] = new Array<number>(target).fill(0);
   for (let i = 0; i < vec.length; i++) {
     const idx = Math.floor((i / vec.length) * target);
-    buckets[idx] += vec[i];
-    counts[idx] += 1;
+    buckets[idx] = (buckets[idx] ?? 0) + Number(vec[i] ?? 0);
+    counts[idx] = (counts[idx] ?? 0) + 1;
   }
-  for (let i = 0; i < target; i++) if (counts[i] > 0) buckets[i] /= counts[i];
+  for (let i = 0; i < target; i++) {
+    const c = counts[i] ?? 0;
+    if (c > 0) buckets[i] = (buckets[i] ?? 0) / c;
+  }
   return buckets;
 }
 
