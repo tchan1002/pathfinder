@@ -1,4 +1,5 @@
 // ---------- Generators & datasource ----------
+
 generator client {
   provider = "prisma-client-js"
 }
@@ -9,67 +10,77 @@ datasource db {
 }
 
 // ---------- Models ----------
+
 model Site {
-  id        String   @id @default(cuid())
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id        String   @id @default(uuid()) @db.Uuid
   domain    String   @unique
   startUrl  String?
-  pages     Page[]
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  pages Page[]
 }
 
 model Page {
-  id              String    @id @default(cuid())
-  createdAt       DateTime  @default(now())
-  updatedAt       DateTime  @updatedAt
-  siteId          String
-  url             String
-  urlNormalized   String
-  title           String?
+  id             String    @id @default(uuid()) @db.Uuid
+  siteId         String    @db.Uuid
+  url            String
+  urlNormalized  String
+  title          String?
   metaDescription String?
-  content         String?
-  contentHash     String?
-  lastCrawledAt   DateTime?
+  content        String?   @db.Text
+  contentHash    String?
+  lastCrawledAt  DateTime?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
 
-  site      Site       @relation(fields: [siteId], references: [id], onDelete: Cascade)
-  snapshots Snapshot[]
-  summaries Summary[]
-
-  // 👇 back relation for Embedding
+  site       Site       @relation(fields: [siteId], references: [id], onDelete: Cascade)
+  summaries  Summary[]
+  snapshots  Snapshot[]
   embeddings Embedding[]
 
   @@unique([siteId, urlNormalized])
   @@index([siteId])
 }
 
-model Snapshot {
-  id             String   @id @default(cuid())
-  pageId         String
-  createdAt      DateTime @default(now())
-  screenshotPath String?
-  page           Page     @relation(fields: [pageId], references: [id], onDelete: Cascade)
-}
-
 model Summary {
-  id        String   @id @default(cuid())
-  pageId    String
-  createdAt DateTime @default(now())
-  text      String
+  id        String   @id @default(uuid()) @db.Uuid
+  pageId    String   @db.Uuid
+  text      String   @db.Text
   textHash  String
-  model     String?
-  page      Page     @relation(fields: [pageId], references: [id], onDelete: Cascade)
+  model     String
+  createdAt DateTime @default(now())
+
+  page Page @relation(fields: [pageId], references: [id], onDelete: Cascade)
 
   @@unique([pageId, textHash])
+  @@index([pageId])
 }
 
-model Embedding {
-  id     String @id @default(cuid())
-  pageId String
-  page   Page   @relation(fields: [pageId], references: [id], onDelete: Cascade)
+model Snapshot {
+  id             String   @id @default(uuid()) @db.Uuid
+  pageId         String   @db.Uuid
+  screenshotPath String
+  createdAt      DateTime @default(now())
 
-  content   String
-  vector    Unsupported("vector(384)") // pgvector column
-  createdAt DateTime                   @default(now())
+  page Page @relation(fields: [pageId], references: [id], onDelete: Cascade)
 
   @@index([pageId])
+}
+
+// Note: We store embeddings in a dedicated table with a pgvector column.
+// Prisma will map the vector type as Unsupported("vector"). Ensure the
+// `vector` extension is installed before migrating (seed script does this).
+model Embedding {
+  id        String   @id @default(uuid()) @db.Uuid
+  pageId    String   @db.Uuid
+  content   String   @db.Text
+  vector    Unsupported("vector")
+  model     String
+  createdAt DateTime @default(now())
+
+  page Page @relation(fields: [pageId], references: [id], onDelete: Cascade)
+
+  @@index([pageId])
+  @@map("Embedding")
 }
