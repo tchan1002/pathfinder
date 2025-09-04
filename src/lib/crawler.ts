@@ -144,21 +144,25 @@ export async function crawlSite(args: { siteId: string; startUrl: string; onEven
           await prisma.summary.create({ data: { pageId: savedPage.id, text: summaryText, textHash: contentHash, model: "local-naive" } });
         }
 
-        // insert embedding if possible
-        if (content) {
-          try {
-            const clipped = content.slice(0, 8000);
-            const vec = await (await import("@/lib/embeddings")).embedText384(clipped);
+        // insert embedding with fallbacks (content -> title -> metaDescription -> url)
+        try {
+          const embedSource = (content || title || description || current).slice(0, 8000);
+          if (embedSource) {
+            const vec = await (await import("@/lib/embeddings")).embedText384(embedSource);
             const v = '[' + vec.map((n) => Number(n).toFixed(6)).join(',') + ']';
             await prisma.$executeRawUnsafe(
-              `INSERT INTO "Embedding" (id, "pageId", content, vector, "createdAt", model) VALUES ($1, $2, $3, $4::vector, NOW(), $5)` ,
+              `INSERT INTO "Embedding" (id, "pageId", content, vector, "createdAt", model) VALUES ($1::uuid, $2::uuid, $3, $4::vector, NOW(), $5)` ,
               crypto.randomUUID(),
               savedPage.id,
-              clipped,
+              embedSource,
               v,
               'text-embedding-3-small->384',
             );
-          } catch {}
+          } else {
+            onEvent?.({ type: 'status', message: `Skipping embedding (empty content) ${current}` });
+          }
+        } catch (err) {
+          onEvent?.({ type: 'status', message: `Embedding failed for ${current}: ${(err as Error).message}` });
         }
 
         onEvent?.({ type: "status", message: `saved ${current}` });

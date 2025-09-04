@@ -118,21 +118,25 @@ export async function POST(req: NextRequest) {
           await prisma.summary.create({ data: { pageId: savedPage.id, text: summaryText, textHash: contentHash, model: "gpt-4o-mini" } });
         }
 
-        // embedding
-        if (content) {
-          try {
-            const clipped = content.slice(0, 8000);
-            const vec = await embedText384(clipped);
+        // embedding: attempt even if body text is empty, using fallbacks
+        try {
+          const embedSource = (content || title || description || current).slice(0, 8000);
+          if (embedSource) {
+            const vec = await embedText384(embedSource);
             const v = '[' + vec.map((n) => Number(n).toFixed(6)).join(',') + ']';
             await prisma.$executeRawUnsafe(
-              `INSERT INTO "Embedding" (id, "pageId", content, vector, "createdAt", model) VALUES ($1, $2, $3, $4::vector, NOW(), $5)` ,
+              `INSERT INTO "Embedding" (id, "pageId", content, vector, "createdAt", model) VALUES ($1::uuid, $2::uuid, $3, $4::vector, NOW(), $5)` ,
               crypto.randomUUID(),
               savedPage.id,
-              clipped,
+              embedSource,
               v,
               'text-embedding-3-small->384',
             );
-          } catch {}
+          } else {
+            console.warn('Skipping embedding: empty source', { url: current, pageId: savedPage.id });
+          }
+        } catch (err) {
+          console.error('Embedding insert failed', { url: current, pageId: savedPage.id, error: (err as Error).message });
         }
 
         results.push({ url: current, ok: true });
