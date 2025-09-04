@@ -1,17 +1,34 @@
 import OpenAI from "openai";
-
-const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+let openai: OpenAI | null = null;
+if (process.env.OPENAI_API_KEY) {
+  openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+}
 
 export async function embedText384(text: string): Promise<number[]> {
-  // Use a 384-dim model (e.g., text-embedding-3-small is 1536). For 384-dim, swap to a provider/model you prefer.
-  // For MVP, we can down-project via averaging chunks to 384 for storage; simple PCA-like reduction.
+  const target = 384;
+  // Local fallback if no API key: hashed bag-of-words with L2 normalization
+  if (!openai) {
+    const buckets = new Float32Array(target);
+    const tokens = text.toLowerCase().split(/[^a-z0-9]+/g).filter(Boolean);
+    for (const tok of tokens) {
+      let h = 2166136261;
+      for (let i = 0; i < tok.length; i++) h = (h ^ tok.charCodeAt(i)) * 16777619;
+      const idx = Math.abs(h | 0) % target;
+      buckets[idx] += 1;
+    }
+    let norm = 0;
+    for (let i = 0; i < target; i++) norm += buckets[i] * buckets[i];
+    norm = Math.sqrt(norm) || 1;
+    for (let i = 0; i < target; i++) buckets[i] /= norm;
+    return Array.from(buckets);
+  }
+
+  // OpenAI path
   const embedding = await openai.embeddings.create({
     model: "text-embedding-3-small",
     input: text,
   });
   const vec = embedding.data[0]?.embedding ?? [];
-  // Down-project to 384 by evenly averaging buckets.
-  const target = 384;
   if (vec.length === target) return vec;
   const buckets: number[] = new Array(target).fill(0);
   const counts: number[] = new Array(target).fill(0);
@@ -20,13 +37,12 @@ export async function embedText384(text: string): Promise<number[]> {
     buckets[idx] += vec[i];
     counts[idx] += 1;
   }
-  for (let i = 0; i < target; i++) {
-    if (counts[i] > 0) buckets[i] /= counts[i];
-  }
+  for (let i = 0; i < target; i++) if (counts[i] > 0) buckets[i] /= counts[i];
   return buckets;
 }
 
 export async function summarizeText(text: string): Promise<string> {
+  if (!openai) return text.replace(/\s+/g, " ").trim().slice(0, 220);
   const prompt = `Summarize the following page in <= 45 words. Imperative mood, no fluff, no preamble.\n\n${text.slice(0, 8000)}`;
   const res = await openai.chat.completions.create({
     model: "gpt-4o-mini",

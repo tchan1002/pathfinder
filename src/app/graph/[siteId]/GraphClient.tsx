@@ -20,12 +20,8 @@ export default function GraphClient({ siteId }: { siteId: string }) {
   const [q, setQ] = useState("");
   const [qLoading, setQLoading] = useState(false);
   const [qError, setQError] = useState<string | null>(null);
-  const [qAnswer, setQAnswer] = useState<string | null>(null);
-  const [qTop, setQTop] = useState<
-    | { url: string; title?: string; snippet?: string; screenshotUrl?: string; confidence: number }
-    | null
-  >(null);
-  const [qRest, setQRest] = useState<Array<{ url: string; title?: string; snippet?: string; screenshotUrl?: string; confidence: number }>>([]);
+  const [qAnswer, setQAnswer] = useState<string | null>(null); // kept for future use
+  const [qResults, setQResults] = useState<Array<{ url: string; title?: string; snippet?: string; screenshotUrl?: string; similarity?: number | string; distance?: number | string | null }>>([]);
   const [qSearched, setQSearched] = useState<boolean>(false);
 
   useEffect(() => {
@@ -72,8 +68,7 @@ export default function GraphClient({ siteId }: { siteId: string }) {
             if (!q.trim()) return;
             setQLoading(true);
             setQSearched(true);
-            setQTop(null);
-            setQRest([]);
+            setQResults([]);
             setQAnswer(null);
             try {
               const res = await fetch(`/api/query`, {
@@ -88,9 +83,12 @@ export default function GraphClient({ siteId }: { siteId: string }) {
               }
               const data = await res.json();
               setQAnswer(data?.answer || null);
-              const src = data?.sources || [];
-              setQTop((src || [])[0] || null);
-              setQRest((src || []).slice(1, 6));
+              const src = (data?.sources || []).map((s: { url: string; title?: string; snippet?: string; screenshotUrl?: string; similarity?: number | string; distance?: number | string | null }) => ({
+                ...s,
+                similarity: Number(s.similarity ?? 0),
+                distance: s.distance == null ? null : Number(s.distance),
+              }));
+              setQResults(src);
             } catch (err) {
               const message = err instanceof Error ? err.message : "Something went wrong";
               setQError(message);
@@ -113,39 +111,17 @@ export default function GraphClient({ siteId }: { siteId: string }) {
         {(qLoading || qSearched) && (
           <div className="mb-3 space-y-3">
             {qLoading && <div className="text-sm text-gray-500">Searching…</div>}
-            {qAnswer && (
-              <div className="border rounded p-3 bg-gray-50">
-                <div className="font-medium text-white">Answer</div>
-                <p className="text-sm text-gray-300 mt-1 whitespace-pre-wrap">{qAnswer}</p>
-              </div>
-            )}
-            {qTop && (
-              <div className="border rounded p-3 bg-gray-50">
-                <div className="text-sm text-gray-500">Best match ({Math.round(qTop.confidence * 100)}%)</div>
-                <div className="font-medium text-white">{qTop.title || qTop.url}</div>
-                {qTop.snippet && <p className="text-sm text-gray-300 mt-1 whitespace-pre-wrap">{qTop.snippet}</p>}
-                <a className="text-white hover:underline text-sm mt-1 inline-block" href={qTop.url} target="_blank" rel="noreferrer">
-                  Open page
-                </a>
-              </div>
-            )}
-            {!qLoading && qSearched && !qTop && qRest.length === 0 && (
-              <div className="text-sm text-gray-500">No results found.</div>
-            )}
-            {qRest.length > 0 && (
-              <div className="border rounded p-3 bg-gray-50">
-                <div className="text-xs text-gray-500 mb-2">Other matches</div>
+            {qResults.length > 0 && (
+              <div className="border border-white rounded p-3 bg-black text-white">
                 <ul className="space-y-2">
-                  {qRest.map((r, i) => (
+                  {qResults.map((r, i) => (
                     <li key={`${r.url}-${i}`} className="text-sm">
                       <div className="flex items-start justify-between gap-2">
-                        <div>
-                          <div className="font-medium text-white">{r.title || r.url}</div>
-                          {r.snippet && <div className="text-gray-300 line-clamp-2">{r.snippet}</div>}
+                        <div className="min-w-0">
+                          <a href={r.url} target="_blank" rel="noreferrer" className="font-medium truncate max-w-[48ch] text-white hover:underline">{r.title || r.url}</a>
                         </div>
-                        <div className="text-gray-500 shrink-0">{Math.round(r.confidence * 100)}%</div>
+                        <div className="text-white/80 shrink-0">{(Number(r.similarity) * 100).toFixed(1)}%{r.distance != null ? ` (${Number(r.distance).toFixed(3)})` : ""}</div>
                       </div>
-                      <a className="text-white hover:underline text-xs" href={r.url} target="_blank" rel="noreferrer">Open</a>
                     </li>
                   ))}
                 </ul>
