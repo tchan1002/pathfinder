@@ -36,40 +36,48 @@ export async function POST(req: NextRequest) {
       );
     }
     
-    // Check for fresh cached job (within 15 minutes)
-    console.log("🔍 Checking for recent job...");
-    const recentJob = await prisma.crawlJob.findFirst({
-      where: {
-        domain,
-        status: "done",
-        createdAt: {
-          gte: new Date(Date.now() - 15 * 60 * 1000), // 15 minutes ago
-        },
-      },
-      orderBy: { createdAt: "desc" },
-    });
-    console.log("🔍 Recent job found:", recentJob ? { id: recentJob.id, status: recentJob.status } : "null");
-    
-    if (recentJob && isJobFresh(recentJob.createdAt)) {
-      // Return cached response - just return the job info
-      console.log("🔍 Returning cached response for job:", recentJob.id);
-      
-      const cachedResponse = {
-        mode: "cached",
-        job_id: recentJob.id,
-        message: "Site already analyzed recently"
-      };
-      
-      console.log("✅ Cached response created successfully");
-      return NextResponse.json(cachedResponse);
-    }
-    
-    // Create or find the Site record first
-    console.log("🔍 Looking for existing site...");
+    // Check if site already exists in the database
+    console.log("🔍 Checking if site already exists...");
     let site = await prisma.site.findUnique({
       where: { domain },
     });
     console.log("🔍 Site found:", site ? { id: site.id, domain: site.domain } : "null");
+    
+    if (site) {
+      // Site already exists - check if it has recent crawling activity
+      console.log("🔍 Site exists, checking for recent job...");
+      const recentJob = await prisma.crawlJob.findFirst({
+        where: {
+          domain,
+          status: "done",
+          createdAt: {
+            gte: new Date(Date.now() - 15 * 60 * 1000), // 15 minutes ago
+          },
+        },
+        orderBy: { createdAt: "desc" },
+      });
+      console.log("🔍 Recent job found:", recentJob ? { id: recentJob.id, status: recentJob.status } : "null");
+      
+      if (recentJob && isJobFresh(recentJob.createdAt)) {
+        // Return cached response - just return the job info
+        console.log("🔍 Returning cached response for job:", recentJob.id);
+        
+        const cachedResponse = {
+          mode: "cached",
+          job_id: recentJob.id,
+          message: "Site already analyzed recently"
+        };
+        
+        console.log("✅ Cached response created successfully");
+        return NextResponse.json(cachedResponse);
+      } else {
+        // Site exists but no recent job - start new crawling
+        console.log("🔍 Site exists but no recent job, starting new crawl...");
+      }
+    } else {
+      // Site doesn't exist - will create it below
+      console.log("🔍 Site doesn't exist, will create new site...");
+    }
     
     if (!site) {
       console.log("🔍 Creating new site...");
