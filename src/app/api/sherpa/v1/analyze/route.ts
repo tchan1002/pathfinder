@@ -2,7 +2,6 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { 
   AnalyzeRequestSchema, 
-  CachedResponseSchema, 
   StartedResponseSchema
 } from "@/lib/sherpa-types";
 import {
@@ -30,7 +29,7 @@ export async function POST(req: NextRequest) {
     const domain = extractDomain(normalizedUrl);
     
     // Check domain limit
-    if (!isWithinDomainLimit(normalizedUrl, domain_limit)) {
+    if (!isWithinDomainLimit(normalizedUrl, domain_limit || null)) {
       return NextResponse.json(
         createErrorResponse("DISALLOWED_DOMAIN", `URL domain not within limit: ${domain_limit}`),
         { status: 400 }
@@ -90,14 +89,12 @@ export async function POST(req: NextRequest) {
         startUrl: normalizedUrl,
         domain,
         status: "queued",
-        userId: user_id || null,
-        maxPages: max_pages || null, // Let Pathfinder decide the crawl limit
       },
     });
     console.log("✅ Job created:", { id: newJob.id, status: newJob.status, domain: newJob.domain });
     
     // Start crawling in background (fire and forget)
-    startCrawlingJob(newJob.id, normalizedUrl, domain, max_pages || null, site.id);
+    startCrawlingJob(newJob.id, normalizedUrl, domain, site.id);
     
     // Return started response
     const startedResponse = StartedResponseSchema.parse({
@@ -130,7 +127,7 @@ export async function POST(req: NextRequest) {
 }
 
 // Background crawling function - uses real Pathfinder crawler
-async function startCrawlingJob(jobId: string, startUrl: string, domain: string, maxPages: number | null, siteId: string) {
+async function startCrawlingJob(jobId: string, startUrl: string, domain: string, siteId: string) {
   try {
     // Update job status to running (only once at start)
     console.log("🔄 Starting crawling job:", jobId);
