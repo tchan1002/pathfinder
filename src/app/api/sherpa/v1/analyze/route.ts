@@ -68,6 +68,20 @@ export async function POST(req: NextRequest) {
       return NextResponse.json(cachedResponse);
     }
     
+    // Create or find the Site record first
+    let site = await prisma.site.findUnique({
+      where: { domain },
+    });
+    
+    if (!site) {
+      site = await prisma.site.create({
+        data: {
+          domain,
+          startUrl: normalizedUrl,
+        },
+      });
+    }
+    
     // Create new job
     const newJob = await prisma.crawlJob.create({
       data: {
@@ -80,8 +94,7 @@ export async function POST(req: NextRequest) {
     });
     
     // Start crawling in background (fire and forget)
-    // TODO: Implement actual crawling logic
-    startCrawlingJob(newJob.id, normalizedUrl, domain, max_pages || 75);
+    startCrawlingJob(newJob.id, normalizedUrl, domain, max_pages || 75, site.id);
     
     // Return started response
     const startedResponse = StartedResponseSchema.parse({
@@ -110,7 +123,7 @@ export async function POST(req: NextRequest) {
 }
 
 // Background crawling function - uses real Pathfinder crawler
-async function startCrawlingJob(jobId: string, startUrl: string, domain: string, maxPages: number) {
+async function startCrawlingJob(jobId: string, startUrl: string, domain: string, maxPages: number, siteId: string) {
   try {
     // Update job status to running
     await prisma.crawlJob.update({
@@ -121,25 +134,11 @@ async function startCrawlingJob(jobId: string, startUrl: string, domain: string,
       },
     });
     
-    // Create or find the Site record
-    let site = await prisma.site.findUnique({
-      where: { domain },
-    });
-    
-    if (!site) {
-      site = await prisma.site.create({
-        data: {
-          domain,
-          startUrl,
-        },
-      });
-    }
-    
-    // Use the real Pathfinder crawler
+    // Use the real Pathfinder crawler with the provided siteId
     const { crawlSite } = await import("@/lib/crawler");
     
     await crawlSite({
-      siteId: site.id,
+      siteId: siteId,
       startUrl,
       onEvent: async (event) => {
         if (event.type === "page" && event.ok && event.pageId) {
