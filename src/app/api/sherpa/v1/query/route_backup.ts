@@ -1,0 +1,175 @@
+import { NextRequest, NextResponse } from "next/server";
+import { z } from "zod";
+import { prisma } from "@/lib/prisma";
+import { embedText384 } from "@/lib/embeddings";
+import { createErrorResponse } from "@/lib/sherpa-utils";
+
+export const runtime = "nodejs";
+
+// Validate jobId as a UUID and question as non-empty string
+const BodySchema = z.object({
+  jobId: z.string().uuid(),
+  question: z.string().min(1),
+});
+
+export async function POST(req: NextRequest) {
+  try {
+    const json = await req.json().catch(() => undefined);
+    const parsed = BodySchema.safeParse(json);
+    if (!parsed.success) {
+      return NextResponse.json(
+        createErrorResponse("INVALID_REQUEST", "Invalid body"),
+        { status: 400 }
+      );
+    }
+    const { jobId, question } = parsed.data;
+
+    // Get the siteId from the job
+    const job = await prisma.crawlJob.findUnique({
+      where: { id: jobId },
+      select: { id: true, domain: true }
+    });
+
+    if (!job) {
+      return NextResponse.json(
+        createErrorResponse("JOB_NOT_FOUND", "Crawl job not found"),
+        { status: 404 }
+      );
+    }
+
+    // Find the corresponding Site record
+    const site = await prisma.site.findUnique({
+      where: { domain: job.domain },
+      select: { id: true }
+    });
+
+    if (!site) {
+      return NextResponse.json(
+        createErrorResponse("SITE_NOT_FOUND", "Site not found for job"),
+        { status: 404 }
+      );
+    }
+
+    // Now use the siteId to query the content
+    let qVecLiteral: string | null = null;
+    try {
+      const qVec = await embedText384(question);
+      qVecLiteral = '[' + qVec.map((n) => Number(n).toFixed(6)).join(',') + ']';
+    } catch {}
+
+    // Try vector search first if we have an embedding; otherwise fall back
+    let candidates: Array<{ url: string; title: string | null; summary: string | null; screenshot: string | null; similarity: number; distance: number | null }>;
+    if (qVecLiteral) {
+      try {
+        candidates = await prisma.$queryRawUnsafe(
+          `
+          SELECT p.url, p.title, s.text as summary, sn."screenshotPath" as screenshot, 
+                 (1 - (e.vector <=> $1::vector)) AS similarity,
+                 (e.vector <=> $1::vector) AS distance
+          FROM "Embedding" e
+          JOIN "Page" p ON p.id = e."pageId"
+          LEFT JOIN "Summary" s ON s."pageId" = p.id
+          LEFT JOIN LATERAL (
+            SELECT * FROM "Snapshot" sn WHERE sn."pageId" = p.id ORDER BY sn."createdAt" DESC LIMIT 1
+          ) sn ON true
+          WHERE p."siteId" = $2::uuid
+          ORDER BY e.vector <=> $1::vector
+          `,
+          qVecLiteral,
+          site.id,
+        );
+        // If vector query returns no rows, fall back to text query
+        if (!Array.isArray(candidates) || candidates.length === 0) {
+          candidates = await prisma.$queryRawUnsafe(
+            `
+            SELECT p.url, p.title, s.text as summary, sn."screenshotPath" as screenshot, 0.0 as similarity, NULL::float8 as distance
+            FROM "Page" p
+            LEFT JOIN "Summary" s ON s."pageId" = p.id
+            LEFT JOIN LATERAL (
+              SELECT * FROM "Snapshot" sn WHERE sn."pageId" = p.id ORDER BY sn."createdAt" DESC LIMIT 1
+            ) sn ON true
+            WHERE p."siteId" = $1::uuid
+            ORDER BY p."createdAt" DESC
+            `,
+            site.id,
+          );
+        }
+      } catch {
+        // Fallback to summary text query
+        candidates = await prisma.$queryRawUnsafe(
+          `
+          SELECT p.url, p.title, s.text as summary, sn."screenshotPath" as screenshot, 0.0 as similarity, NULL::float8 as distance
+          FROM "Page" p
+          LEFT JOIN "Summary" s ON s."pageId" = p.id
+          LEFT JOIN LATERAL (
+            SELECT * FROM "Snapshot" sn WHERE sn."pageId" = p.id ORDER BY sn."createdAt" DESC LIMIT 1
+          ) sn ON true
+          WHERE p."siteId" = $1::uuid
+          ORDER BY p."createdAt" DESC
+          `,
+          site.id,
+        );
+      }
+    } else {
+      // No embedding available: use summary text query
+      candidates = await prisma.$queryRawUnsafe(
+        `
+        SELECT p.url, p.title, s.text as summary, sn."screenshotPath" as screenshot, 0.0 as similarity, NULL::float8 as distance
+        FROM "Page" p
+        LEFT JOIN "Summary" s ON s."pageId" = p.id
+        LEFT JOIN LATERAL (
+          SELECT * FROM "Snapshot" sn WHERE sn."pageId" = p.id ORDER BY sn."createdAt" DESC LIMIT 1
+        ) sn ON true
+        WHERE p."siteId" = $1::uuid
+        ORDER BY p."createdAt" DESC
+        `,
+        site.id,
+      );
+    }
+
+    // Results are already ordered by vector distance (or recency in fallback)
+    const ordered = candidates;
+
+    // Generate LLM answer with graceful fallback
+    let answer: string | null = null;
+    try {
+      if (process.env.OPENAI_API_KEY) {
+        const OpenAI = (await import("openai")).default;
+        const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+        const context = ordered
+          .slice(0, 3)
+          .map((r, i) => `[${i + 1}] ${r.title || r.url}\n${(r.summary || "").slice(0, 500)}`)
+          .join("\n\n");
+        const completion = await openai.chat.completions.create({
+          model: "gpt-4o-mini",
+          messages: [
+            { role: "system", content: "You answer questions about a website using only the provided context. If the context is insufficient, say you don't know." },
+            { role: "user", content: `Question: ${question}\n\nContext:\n${context}` },
+          ],
+          temperature: 0.2,
+          max_tokens: 200,
+        });
+        answer = completion.choices[0]?.message.content?.trim() || null;
+      }
+    } catch {}
+
+    return NextResponse.json({
+      answer: answer ?? undefined,
+      sources: ordered.map((r) => ({
+        url: r.url,
+        title: r.title ?? undefined,
+        snippet: r.summary ?? undefined,
+        screenshotUrl: r.screenshot ?? undefined,
+        similarity: Number(r.similarity),
+        distance: r.distance === null ? null : Number(r.distance),
+      })),
+    });
+  } catch (e) {
+    console.error("Sherpa query endpoint error:", e);
+    const message = e instanceof Error ? e.message : "Unknown error";
+    return NextResponse.json(
+      createErrorResponse("INTERNAL_ERROR", message),
+      { status: 500 }
+    );
+  }
+}
