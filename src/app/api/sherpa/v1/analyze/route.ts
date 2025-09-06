@@ -102,7 +102,10 @@ export async function POST(req: NextRequest) {
     console.log("✅ Job created:", { id: newJob.id, status: newJob.status, domain: newJob.domain });
     
     // Start crawling in background (fire and forget)
-    startCrawlingJob(newJob.id, normalizedUrl, domain, site.id);
+    console.log("🚀 Starting background crawling job...");
+    startCrawlingJob(newJob.id, normalizedUrl, domain, site.id).catch(error => {
+      console.error("❌ Background crawling job failed:", error);
+    });
     
     // Return started response
     const startedResponse = StartedResponseSchema.parse({
@@ -137,8 +140,10 @@ export async function POST(req: NextRequest) {
 // Background crawling function - uses real Pathfinder crawler
 async function startCrawlingJob(jobId: string, startUrl: string, domain: string, siteId: string) {
   try {
+    console.log("🔄 Starting crawling job:", { jobId, startUrl, domain, siteId });
+    
     // Update job status to running (only once at start)
-    console.log("🔄 Starting crawling job:", jobId);
+    console.log("🔄 Updating job status to running...");
     await prisma.crawlJob.update({
       where: { id: jobId },
       data: { 
@@ -146,15 +151,22 @@ async function startCrawlingJob(jobId: string, startUrl: string, domain: string,
         startedAt: new Date(),
       },
     });
+    console.log("✅ Job status updated to running");
     
     // Use the real Pathfinder crawler with the provided siteId
+    console.log("📦 Importing crawler...");
     const { crawlSite } = await import("@/lib/crawler");
+    console.log("✅ Crawler imported successfully");
     
     let pagesScanned = 0;
+    console.log("🚀 Starting crawlSite with params:", { siteId, startUrl });
+    
     await crawlSite({
       siteId: siteId,
       startUrl,
       onEvent: async (event) => {
+        console.log("📡 Crawl event received:", event.type, event.url || "no url");
+        
         // Track basic progress and update database
         if (event.type === "page") {
           pagesScanned++;
@@ -162,16 +174,22 @@ async function startCrawlingJob(jobId: string, startUrl: string, domain: string,
           
           // Update progress in database every 5 pages
           if (pagesScanned % 5 === 0) {
+            console.log(`💾 Updating database with ${pagesScanned} pages...`);
             await prisma.crawlJob.update({
               where: { id: jobId },
               data: { pagesScanned },
             });
+            console.log(`✅ Database updated with ${pagesScanned} pages`);
           }
         } else if (event.type === "done") {
           console.log(`✅ Crawling completed, processed ${pagesScanned} pages`);
+        } else if (event.type === "error") {
+          console.error(`❌ Crawl error:`, event.error);
         }
       },
     });
+    
+    console.log("✅ crawlSite completed successfully");
     
     // Crawling completed - no need for page scoring in MVP
     console.log("✅ Crawling completed successfully");
