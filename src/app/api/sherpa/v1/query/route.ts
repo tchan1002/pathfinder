@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { embedText384 } from "@/lib/embeddings";
+import { createErrorResponse } from "@/lib/sherpa-utils";
 
 export const runtime = "nodejs";
 
@@ -16,7 +17,10 @@ export async function POST(req: NextRequest) {
     const json = await req.json().catch(() => undefined);
     const parsed = BodySchema.safeParse(json);
     if (!parsed.success) {
-      return NextResponse.json({ error: "Invalid body" }, { status: 400 });
+      return NextResponse.json(
+        createErrorResponse("INVALID_REQUEST", "Invalid body"),
+        { status: 400 }
+      );
     }
     const { jobId, question } = parsed.data;
 
@@ -27,7 +31,10 @@ export async function POST(req: NextRequest) {
     });
 
     if (!job) {
-      return NextResponse.json({ error: "Job not found" }, { status: 404 });
+      return NextResponse.json(
+        createErrorResponse("JOB_NOT_FOUND", "Crawl job not found"),
+        { status: 404 }
+      );
     }
 
     // Find the corresponding Site record
@@ -37,7 +44,10 @@ export async function POST(req: NextRequest) {
     });
 
     if (!site) {
-      return NextResponse.json({ error: "Site not found" }, { status: 404 });
+      return NextResponse.json(
+        createErrorResponse("SITE_NOT_FOUND", "Site not found for job"),
+        { status: 404 }
+      );
     }
 
     // Now use the siteId to query the content
@@ -155,7 +165,11 @@ export async function POST(req: NextRequest) {
       })),
     });
   } catch (e) {
+    console.error("Sherpa query endpoint error:", e);
     const message = e instanceof Error ? e.message : "Unknown error";
-    return NextResponse.json({ error: message }, { status: 500 });
+    return NextResponse.json(
+      createErrorResponse("INTERNAL_ERROR", message),
+      { status: 500 }
+    );
   }
 }
