@@ -153,7 +153,8 @@ export async function POST(req: NextRequest) {
 // Background crawling function - uses real Pathfinder crawler
 async function startCrawlingJob(jobId: string, startUrl: string, domain: string, maxPages: number | null, siteId: string) {
   try {
-    // Update job status to running
+    // Update job status to running (only once at start)
+    console.log("🔄 Starting crawling job:", jobId);
     await prisma.crawlJob.update({
       where: { id: jobId },
       data: { 
@@ -169,51 +170,65 @@ async function startCrawlingJob(jobId: string, startUrl: string, domain: string,
       siteId: siteId,
       startUrl,
       onEvent: async (event) => {
-        if (event.type === "page" && event.ok && event.pageId) {
-          // Create a page score for each crawled page
-          const page = await prisma.page.findUnique({
-            where: { id: event.pageId },
-            select: { url: true, title: true, content: true }
-          });
-          
-          if (page) {
-            // Simple scoring based on content length and title quality
-            const score = calculatePageScore({
-              url: page.url,
-              title: page.title || "",
-              content: page.content || "",
-              isHomePage: page.url === startUrl,
-            });
-            
-            await prisma.pageScore.create({
-              data: {
-                jobId,
-                url: page.url,
-                title: (page.title || "Untitled").slice(0, 512),
-                score,
-                rank: 0, // Will be updated after all pages are processed
-                signalsJson: {
-                  reasons: generateReasons(score, page.url, page.title),
-                },
-              },
-            });
-          }
+        // Don't do any database operations during crawling for performance
+        // We'll create page scores after crawling is complete
+        if (event.type === "done") {
+          console.log("✅ Crawling completed, creating page scores...");
         }
       },
     });
     
+    // Create page scores after crawling is complete for better performance
+    console.log("🔍 Creating page scores after crawling...");
+    const pages = await prisma.page.findMany({
+      where: { siteId },
+      select: { id: true, url: true, title: true, content: true }
+    });
+    
+    console.log(`🔍 Found ${pages.length} pages to score`);
+    
+    // Create page scores in batch
+    const pageScores = [];
+    for (const page of pages) {
+      const score = calculatePageScore({
+        url: page.url,
+        title: page.title || "",
+        content: page.content || "",
+        isHomePage: page.url === startUrl,
+      });
+      
+      pageScores.push({
+        jobId,
+        url: page.url,
+        title: (page.title || "Untitled").slice(0, 512),
+        score,
+        rank: 0, // Will be updated after all pages are processed
+        signalsJson: {
+          reasons: generateReasons(score, page.url, page.title),
+        },
+      });
+    }
+    
+    // Batch create all page scores
+    if (pageScores.length > 0) {
+      await prisma.pageScore.createMany({
+        data: pageScores,
+      });
+      console.log(`✅ Created ${pageScores.length} page scores`);
+    }
+    
     // Update ranks based on scores
     console.log("🔍 Updating page score ranks...");
-    const pageScores = await prisma.pageScore.findMany({
+    const rankedPageScores = await prisma.pageScore.findMany({
       where: { jobId },
       orderBy: { score: 'desc' },
     });
     
-    console.log(`🔍 Found ${pageScores.length} page scores to rank`);
+    console.log(`🔍 Found ${rankedPageScores.length} page scores to rank`);
     
-    for (let i = 0; i < pageScores.length; i++) {
+    for (let i = 0; i < rankedPageScores.length; i++) {
       await prisma.pageScore.update({
-        where: { id: pageScores[i].id },
+        where: { id: rankedPageScores[i].id },
         data: { rank: i + 1 },
       });
     }
