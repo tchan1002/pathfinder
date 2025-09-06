@@ -60,9 +60,19 @@ export async function POST(req: NextRequest) {
     
     if (recentJob && isJobFresh(recentJob.createdAt)) {
       // Return cached response
+      console.log("🔍 Returning cached response for job:", recentJob.id);
+      console.log("🔍 Page scores for cached job:", recentJob.pageScores.map(ps => ({ 
+        url: ps.url, 
+        rank: ps.rank, 
+        score: ps.score 
+      })));
+      
       const top = pageScoreToPage(recentJob.pageScores[0]);
       const next = recentJob.pageScores[1] ? pageScoreToPage(recentJob.pageScores[1]) : null;
       const remaining = Math.max(0, recentJob.pageScores.length - 2);
+      
+      console.log("🔍 Converted top page:", top);
+      console.log("🔍 Converted next page:", next);
       
       const cachedResponse = CachedResponseSchema.parse({
         mode: "cached",
@@ -72,6 +82,7 @@ export async function POST(req: NextRequest) {
         remaining,
       });
       
+      console.log("✅ Cached response created successfully");
       return NextResponse.json(cachedResponse);
     }
     
@@ -192,10 +203,13 @@ async function startCrawlingJob(jobId: string, startUrl: string, domain: string,
     });
     
     // Update ranks based on scores
+    console.log("🔍 Updating page score ranks...");
     const pageScores = await prisma.pageScore.findMany({
       where: { jobId },
       orderBy: { score: 'desc' },
     });
+    
+    console.log(`🔍 Found ${pageScores.length} page scores to rank`);
     
     for (let i = 0; i < pageScores.length; i++) {
       await prisma.pageScore.update({
@@ -203,6 +217,8 @@ async function startCrawlingJob(jobId: string, startUrl: string, domain: string,
         data: { rank: i + 1 },
       });
     }
+    
+    console.log("✅ Page score ranks updated successfully");
     
     // Mark job as done
     console.log("✅ Crawling completed, marking job as done:", jobId);

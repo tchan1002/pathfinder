@@ -118,7 +118,7 @@ export function pageScoreToPage(pageScore: {
     url: pageScore.url,
     title: pageScore.title,
     score: pageScore.score,
-    rank: pageScore.rank,
+    rank: Math.max(1, pageScore.rank || 1), // Ensure rank is at least 1
     reasons: pageScore.signalsJson?.reasons || undefined,
     updated_at: pageScore.updatedAt.toISOString(),
   };
