@@ -89,18 +89,18 @@ export async function POST(req: NextRequest) {
         domain,
         status: "queued",
         userId: user_id || null,
-        maxPages: max_pages || 75,
+        maxPages: max_pages || null, // Let Pathfinder decide the crawl limit
       },
     });
     
     // Start crawling in background (fire and forget)
-    startCrawlingJob(newJob.id, normalizedUrl, domain, max_pages || 75, site.id);
+    startCrawlingJob(newJob.id, normalizedUrl, domain, max_pages || null, site.id);
     
     // Return started response
     const startedResponse = StartedResponseSchema.parse({
       mode: "started",
       job_id: newJob.id,
-      eta_sec: 30, // Estimate 30 seconds for now
+      eta_sec: 120, // Estimate 2 minutes for full crawl (no page limit)
     });
     
     return NextResponse.json(startedResponse);
@@ -123,7 +123,7 @@ export async function POST(req: NextRequest) {
 }
 
 // Background crawling function - uses real Pathfinder crawler
-async function startCrawlingJob(jobId: string, startUrl: string, domain: string, maxPages: number, siteId: string) {
+async function startCrawlingJob(jobId: string, startUrl: string, domain: string, maxPages: number | null, siteId: string) {
   try {
     // Update job status to running
     await prisma.crawlJob.update({

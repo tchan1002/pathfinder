@@ -34,11 +34,10 @@ export async function GET(
     let progress = undefined;
     if (job.status === "running") {
       const pagesScanned = job.pageScores.length;
-      const pagesTotalEst = job.maxPages || 75;
-      
+      // No page limit - just show pages scanned
       progress = {
         pages_scanned: pagesScanned,
-        pages_total_est: pagesTotalEst,
+        pages_total_est: null, // No limit - let Pathfinder decide when to stop
       };
     }
     

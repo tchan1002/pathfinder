@@ -7,8 +7,6 @@ generator client {
 datasource db {
   provider = "postgresql"
   url      = env("DATABASE_URL")
-  // Add connection pooling and timeout settings
-  relationMode = "prisma"
 }
 
 // ---------- Models ----------

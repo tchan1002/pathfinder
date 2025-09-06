@@ -53,7 +53,7 @@ export const JobStatusResponseSchema = z.object({
   status: z.enum(["queued", "running", "done", "error"]),
   progress: z.object({
     pages_scanned: z.number().int().min(0),
-    pages_total_est: z.number().int().min(0).optional(),
+    pages_total_est: z.number().int().min(0).nullable().optional(),
   }).optional(),
   error_code: z.string().optional(),
   error_message: z.string().optional(),
