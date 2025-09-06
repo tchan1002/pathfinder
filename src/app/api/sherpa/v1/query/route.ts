@@ -95,6 +95,13 @@ export async function POST(req: NextRequest) {
     
     // Return the first matching result
     const bestMatch = searchResults[0];
+    if (!bestMatch) {
+      return NextResponse.json({
+        answer: `I couldn't find information about "${question}" in the crawled pages.`,
+        sources: []
+      });
+    }
+    
     const answer = `Based on the crawled content, here's what I found about "${question}":\n\n${(bestMatch.content || '').substring(0, 500)}${(bestMatch.content || '').length > 500 ? '...' : ''}`;
     
     return NextResponse.json({
