@@ -188,6 +188,7 @@ async function startCrawlingJob(jobId: string, startUrl: string, domain: string,
     }
     
     // Mark job as done
+    console.log("✅ Crawling completed, marking job as done:", jobId);
     await prisma.crawlJob.update({
       where: { id: jobId },
       data: { 
@@ -195,11 +196,13 @@ async function startCrawlingJob(jobId: string, startUrl: string, domain: string,
         finishedAt: new Date(),
       },
     });
+    console.log("✅ Job marked as done successfully");
     
   } catch (error) {
-    console.error("Crawling job error:", error);
+    console.error("❌ Crawling job error:", error);
     
     // Mark job as error
+    console.log("❌ Marking job as error:", jobId);
     await prisma.crawlJob.update({
       where: { id: jobId },
       data: { 
@@ -207,6 +210,7 @@ async function startCrawlingJob(jobId: string, startUrl: string, domain: string,
         finishedAt: new Date(),
       },
     });
+    console.log("❌ Job marked as error successfully");
   }
 }
 

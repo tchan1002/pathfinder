@@ -13,6 +13,8 @@ export async function GET(req: NextRequest) {
     const { searchParams } = new URL(req.url);
     const jobId = searchParams.get("job_id");
     
+    console.log("🔍 Results head endpoint called with jobId:", jobId);
+    
     if (!jobId) {
       return NextResponse.json(
         createErrorResponse("INTERNAL_ERROR", "Missing job_id parameter"),
@@ -30,6 +32,14 @@ export async function GET(req: NextRequest) {
       },
     });
     
+    console.log("🔍 Job found:", job ? {
+      id: job.id,
+      status: job.status,
+      pageScoresCount: job.pageScores.length,
+      createdAt: job.createdAt,
+      finishedAt: job.finishedAt
+    } : "null");
+    
     if (!job) {
       return NextResponse.json(
         createErrorResponse("INTERNAL_ERROR", "Job not found"),
@@ -38,8 +48,9 @@ export async function GET(req: NextRequest) {
     }
     
     if (job.status !== "done") {
+      console.log("❌ Job not completed, status:", job.status);
       return NextResponse.json(
-        createErrorResponse("INTERNAL_ERROR", "Job not completed"),
+        createErrorResponse("INTERNAL_ERROR", `Job not completed, status: ${job.status}`),
         { status: 400 }
       );
     }
