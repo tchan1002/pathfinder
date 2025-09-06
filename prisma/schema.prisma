@@ -94,58 +94,10 @@ model CrawlJob {
   status      String    // "queued" | "running" | "done" | "error"
   startedAt   DateTime? @map("started_at")
   finishedAt  DateTime? @map("finished_at")
-  userId      String?   @map("user_id")
-  maxPages    Int?      @map("max_pages")
   createdAt   DateTime  @default(now()) @map("created_at")
   updatedAt   DateTime  @updatedAt @map("updated_at")
-
-  pageScores PageScore[]
-  feedback   Feedback[]
 
   @@index([domain, startedAt(sort: Desc)])
   @@index([status, startedAt(sort: Desc)])
   @@map("CrawlJob")
-}
-
-model PageScore {
-  id           BigInt   @id @default(autoincrement())
-  jobId        String   @map("job_id") @db.Uuid
-  url          String
-  title        String
-  score        Float
-  rank         Int
-  signalsJson  Json?    @map("signals_json")
-  updatedAt    DateTime @default(now()) @updatedAt @map("updated_at")
-
-  job CrawlJob @relation(fields: [jobId], references: [id], onDelete: Cascade)
-
-  @@index([jobId, rank])
-  @@index([jobId, score(sort: Desc)])
-  @@index([url])
-  @@map("PageScore")
-}
-
-model Feedback {
-  id           BigInt   @id @default(autoincrement())
-  jobId        String   @map("job_id") @db.Uuid
-  landedUrl    String   @map("landed_url")
-  wasCorrect   Boolean  @map("was_correct")
-  chosenRank   Int?     @map("chosen_rank")
-  userId       String?  @map("user_id")
-  createdAt    DateTime @default(now()) @map("created_at")
-
-  job CrawlJob @relation(fields: [jobId], references: [id], onDelete: Cascade)
-
-  @@index([jobId])
-  @@index([userId, createdAt(sort: Desc)])
-  @@map("Feedback")
-}
-
-model UserPref {
-  userId        String   @id @map("user_id")
-  keywords      String[]
-  autoRedirect  Boolean  @default(true) @map("auto_redirect")
-  updatedAt     DateTime @default(now()) @updatedAt @map("updated_at")
-
-  @@map("UserPref")
 }

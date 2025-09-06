@@ -10,8 +10,7 @@ import {
   normalizeUrl,
   extractDomain,
   isWithinDomainLimit,
-  isJobFresh,
-  pageScoreToPage
+  isJobFresh
 } from "@/lib/sherpa-utils";
 
 export async function POST(req: NextRequest) {
@@ -49,38 +48,18 @@ export async function POST(req: NextRequest) {
         },
       },
       orderBy: { createdAt: "desc" },
-      include: {
-        pageScores: {
-          orderBy: { rank: "asc" },
-          take: 2, // top + next
-        },
-      },
     });
-    console.log("🔍 Recent job found:", recentJob ? { id: recentJob.id, status: recentJob.status, pageScoresCount: recentJob.pageScores.length } : "null");
+    console.log("🔍 Recent job found:", recentJob ? { id: recentJob.id, status: recentJob.status } : "null");
     
     if (recentJob && isJobFresh(recentJob.createdAt)) {
-      // Return cached response
+      // Return cached response - just return the job info
       console.log("🔍 Returning cached response for job:", recentJob.id);
-      console.log("🔍 Page scores for cached job:", recentJob.pageScores.map(ps => ({ 
-        url: ps.url, 
-        rank: ps.rank, 
-        score: ps.score 
-      })));
       
-      const top = pageScoreToPage(recentJob.pageScores[0]);
-      const next = recentJob.pageScores[1] ? pageScoreToPage(recentJob.pageScores[1]) : null;
-      const remaining = Math.max(0, recentJob.pageScores.length - 2);
-      
-      console.log("🔍 Converted top page:", top);
-      console.log("🔍 Converted next page:", next);
-      
-      const cachedResponse = CachedResponseSchema.parse({
+      const cachedResponse = {
         mode: "cached",
         job_id: recentJob.id,
-        top,
-        next,
-        remaining,
-      });
+        message: "Site already analyzed recently"
+      };
       
       console.log("✅ Cached response created successfully");
       return NextResponse.json(cachedResponse);
@@ -178,62 +157,8 @@ async function startCrawlingJob(jobId: string, startUrl: string, domain: string,
       },
     });
     
-    // Create page scores after crawling is complete for better performance
-    console.log("🔍 Creating page scores after crawling...");
-    const pages = await prisma.page.findMany({
-      where: { siteId },
-      select: { id: true, url: true, title: true, content: true }
-    });
-    
-    console.log(`🔍 Found ${pages.length} pages to score`);
-    
-    // Create page scores in batch
-    const pageScores = [];
-    for (const page of pages) {
-      const score = calculatePageScore({
-        url: page.url,
-        title: page.title || "",
-        content: page.content || "",
-        isHomePage: page.url === startUrl,
-      });
-      
-      pageScores.push({
-        jobId,
-        url: page.url,
-        title: (page.title || "Untitled").slice(0, 512),
-        score,
-        rank: 0, // Will be updated after all pages are processed
-        signalsJson: {
-          reasons: generateReasons(score, page.url, page.title),
-        },
-      });
-    }
-    
-    // Batch create all page scores
-    if (pageScores.length > 0) {
-      await prisma.pageScore.createMany({
-        data: pageScores,
-      });
-      console.log(`✅ Created ${pageScores.length} page scores`);
-    }
-    
-    // Update ranks based on scores
-    console.log("🔍 Updating page score ranks...");
-    const rankedPageScores = await prisma.pageScore.findMany({
-      where: { jobId },
-      orderBy: { score: 'desc' },
-    });
-    
-    console.log(`🔍 Found ${rankedPageScores.length} page scores to rank`);
-    
-    for (let i = 0; i < rankedPageScores.length; i++) {
-      await prisma.pageScore.update({
-        where: { id: rankedPageScores[i].id },
-        data: { rank: i + 1 },
-      });
-    }
-    
-    console.log("✅ Page score ranks updated successfully");
+    // Crawling completed - no need for page scoring in MVP
+    console.log("✅ Crawling completed successfully");
     
     // Mark job as done
     console.log("✅ Crawling completed, marking job as done:", jobId);
@@ -262,62 +187,3 @@ async function startCrawlingJob(jobId: string, startUrl: string, domain: string,
   }
 }
 
-function calculatePageScore(args: {
-  url: string;
-  title: string;
-  content: string;
-  isHomePage: boolean;
-}): number {
-  const { url, title, content, isHomePage } = args;
-  let score = 0;
-
-  // Home page gets highest score
-  if (isHomePage) {
-    score += 0.4;
-  }
-
-  // Title quality
-  if (title && title.length > 10) {
-    score += 0.2;
-  }
-
-  // Content length (more content = higher score)
-  const contentLength = content.length;
-  if (contentLength > 1000) {
-    score += 0.2;
-  } else if (contentLength > 500) {
-    score += 0.1;
-  }
-
-  // URL structure (shorter paths often better)
-  const urlPath = new URL(url).pathname;
-  const pathDepth = urlPath.split('/').length - 1;
-  if (pathDepth <= 2) {
-    score += 0.1;
-  }
-
-  // Ensure score is between 0 and 1
-  return Math.min(Math.max(score, 0), 1);
-}
-
-function generateReasons(score: number, url: string, title?: string): string[] {
-  const reasons: string[] = [];
-  
-  if (score >= 0.8) {
-    reasons.push("High-quality content");
-  }
-  
-  if (title && title.length > 10) {
-    reasons.push("Clear page title");
-  }
-  
-  if (url.endsWith('/') || url.split('/').length <= 3) {
-    reasons.push("Main section page");
-  }
-  
-  if (reasons.length === 0) {
-    reasons.push("Standard page");
-  }
-  
-  return reasons.slice(0, 3); // Max 3 reasons
-}

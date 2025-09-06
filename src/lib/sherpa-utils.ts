@@ -103,23 +103,3 @@ export function isJobFresh(createdAt: Date): boolean {
   return diffMinutes < 15;
 }
 
-/**
- * Convert Prisma PageScore to contract Page format
- */
-export function pageScoreToPage(pageScore: {
-  url: string;
-  title: string;
-  score: number;
-  rank: number;
-  signalsJson: any;
-  updatedAt: Date;
-}): any {
-  return {
-    url: pageScore.url,
-    title: pageScore.title,
-    score: pageScore.score,
-    rank: Math.max(1, pageScore.rank || 1), // Ensure rank is at least 1
-    reasons: pageScore.signalsJson?.reasons || undefined,
-    updated_at: pageScore.updatedAt.toISOString(),
-  };
-}

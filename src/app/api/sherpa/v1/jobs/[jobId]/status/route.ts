@@ -16,11 +16,6 @@ export async function GET(
     
     const job = await prisma.crawlJob.findUnique({
       where: { id: jobId },
-      include: {
-        pageScores: {
-          orderBy: { rank: "asc" },
-        },
-      },
     });
     
     if (!job) {
@@ -30,14 +25,13 @@ export async function GET(
       );
     }
     
-    // Calculate progress if job is running
+    // For running jobs, we can't easily show progress without PageScore
+    // Just show the status
     let progress = undefined;
     if (job.status === "running") {
-      const pagesScanned = job.pageScores.length;
-      // No page limit - just show pages scanned
       progress = {
-        pages_scanned: pagesScanned,
-        pages_total_est: null, // No limit - let Pathfinder decide when to stop
+        pages_scanned: 0, // We don't track this anymore
+        pages_total_est: null,
       };
     }
     
