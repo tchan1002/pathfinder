@@ -142,14 +142,25 @@ async function startCrawlingJob(jobId: string, startUrl: string, domain: string,
     // Use the real Pathfinder crawler with the provided siteId
     const { crawlSite } = await import("@/lib/crawler");
     
+    let pagesScanned = 0;
     await crawlSite({
       siteId: siteId,
       startUrl,
       onEvent: async (event) => {
-        // Don't do any database operations during crawling for performance
-        // We'll create page scores after crawling is complete
-        if (event.type === "done") {
-          console.log("✅ Crawling completed, creating page scores...");
+        // Track basic progress and update database
+        if (event.type === "page") {
+          pagesScanned++;
+          console.log(`📄 Page ${pagesScanned} processed: ${event.url}`);
+          
+          // Update progress in database every 5 pages
+          if (pagesScanned % 5 === 0) {
+            await prisma.crawlJob.update({
+              where: { id: jobId },
+              data: { pagesScanned },
+            });
+          }
+        } else if (event.type === "done") {
+          console.log(`✅ Crawling completed, processed ${pagesScanned} pages`);
         }
       },
     });

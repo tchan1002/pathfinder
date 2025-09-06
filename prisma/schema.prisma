@@ -88,14 +88,15 @@ model Embedding {
 // ---------- Sherpa API Models ----------
 
 model CrawlJob {
-  id          String    @id @default(uuid()) @db.Uuid
-  startUrl    String
-  domain      String
-  status      String    // "queued" | "running" | "done" | "error"
-  startedAt   DateTime? @map("started_at")
-  finishedAt  DateTime? @map("finished_at")
-  createdAt   DateTime  @default(now()) @map("created_at")
-  updatedAt   DateTime  @updatedAt @map("updated_at")
+  id           String    @id @default(uuid()) @db.Uuid
+  startUrl     String
+  domain       String
+  status       String    // "queued" | "running" | "done" | "error"
+  pagesScanned Int       @default(0) @map("pages_scanned")
+  startedAt    DateTime? @map("started_at")
+  finishedAt   DateTime? @map("finished_at")
+  createdAt    DateTime  @default(now()) @map("created_at")
+  updatedAt    DateTime  @updatedAt @map("updated_at")
 
   @@index([domain, startedAt(sort: Desc)])
   @@index([status, startedAt(sort: Desc)])

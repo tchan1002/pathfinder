@@ -25,13 +25,12 @@ export async function GET(
       );
     }
     
-    // For running jobs, we can't easily show progress without PageScore
-    // Just show the status
+    // For running jobs, show actual progress
     let progress = undefined;
     if (job.status === "running") {
       progress = {
-        pages_scanned: 0, // We don't track this anymore
-        pages_total_est: null,
+        pages_scanned: job.pagesScanned,
+        pages_total_est: null, // Unknown total
       };
     }
     
