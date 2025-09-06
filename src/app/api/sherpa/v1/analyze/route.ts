@@ -16,10 +16,15 @@ import {
 
 export async function POST(req: NextRequest) {
   try {
+    console.log("🔍 Analyze endpoint called");
     const body = await req.json();
+    console.log("🔍 Request body:", body);
+    
     const validatedBody = AnalyzeRequestSchema.parse(body);
+    console.log("✅ Request body validated successfully");
     
     const { start_url, domain_limit, user_id, max_pages } = validatedBody;
+    console.log("🔍 Parsed parameters:", { start_url, domain_limit, user_id, max_pages });
     
     // Normalize URL and extract domain
     const normalizedUrl = normalizeUrl(start_url);
@@ -34,6 +39,7 @@ export async function POST(req: NextRequest) {
     }
     
     // Check for fresh cached job (within 15 minutes)
+    console.log("🔍 Checking for recent job...");
     const recentJob = await prisma.crawlJob.findFirst({
       where: {
         domain,
@@ -50,6 +56,7 @@ export async function POST(req: NextRequest) {
         },
       },
     });
+    console.log("🔍 Recent job found:", recentJob ? { id: recentJob.id, status: recentJob.status, pageScoresCount: recentJob.pageScores.length } : "null");
     
     if (recentJob && isJobFresh(recentJob.createdAt)) {
       // Return cached response
@@ -69,20 +76,25 @@ export async function POST(req: NextRequest) {
     }
     
     // Create or find the Site record first
+    console.log("🔍 Looking for existing site...");
     let site = await prisma.site.findUnique({
       where: { domain },
     });
+    console.log("🔍 Site found:", site ? { id: site.id, domain: site.domain } : "null");
     
     if (!site) {
+      console.log("🔍 Creating new site...");
       site = await prisma.site.create({
         data: {
           domain,
           startUrl: normalizedUrl,
         },
       });
+      console.log("✅ Site created:", { id: site.id, domain: site.domain });
     }
     
     // Create new job
+    console.log("🔍 Creating new crawl job...");
     const newJob = await prisma.crawlJob.create({
       data: {
         startUrl: normalizedUrl,
@@ -92,6 +104,7 @@ export async function POST(req: NextRequest) {
         maxPages: max_pages || null, // Let Pathfinder decide the crawl limit
       },
     });
+    console.log("✅ Job created:", { id: newJob.id, status: newJob.status, domain: newJob.domain });
     
     // Start crawling in background (fire and forget)
     startCrawlingJob(newJob.id, normalizedUrl, domain, max_pages || null, site.id);
@@ -106,17 +119,21 @@ export async function POST(req: NextRequest) {
     return NextResponse.json(startedResponse);
     
   } catch (error) {
-    console.error("Analyze endpoint error:", error);
+    console.error("❌ Analyze endpoint error:", error);
+    console.error("❌ Error stack:", error instanceof Error ? error.stack : "No stack trace");
+    console.error("❌ Error message:", error instanceof Error ? error.message : "Unknown error");
     
     if (error instanceof Error && error.message.includes("Invalid URL")) {
+      console.log("❌ Invalid URL error detected");
       return NextResponse.json(
         createErrorResponse("INVALID_URL", error.message),
         { status: 400 }
       );
     }
     
+    console.log("❌ Returning generic internal error");
     return NextResponse.json(
-      createErrorResponse("INTERNAL_ERROR", "Internal server error"),
+      createErrorResponse("INTERNAL_ERROR", error instanceof Error ? error.message : "Internal server error"),
       { status: 500 }
     );
   }
