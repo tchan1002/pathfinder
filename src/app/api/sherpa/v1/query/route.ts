@@ -51,11 +51,11 @@ export async function POST(req: NextRequest) {
 
     // For now, return a simple response to test the flow
     return NextResponse.json({
-      answer: `Test answer for question: "${question}" on site: ${job.domain}`,
+      answer: `UPDATED: Test answer for question: "${question}" on site: ${job.domain}`,
       sources: [{
         url: `https://${job.domain}`,
         title: `Homepage of ${job.domain}`,
-        snippet: "This is a test response",
+        snippet: "This is an updated test response",
         screenshotUrl: undefined,
       }]
     });
