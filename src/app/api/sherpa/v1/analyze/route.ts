@@ -103,9 +103,23 @@ export async function POST(req: NextRequest) {
     
     // Start crawling in background (fire and forget)
     console.log("🚀 Starting background crawling job...");
-    startCrawlingJob(newJob.id, normalizedUrl, domain, site.id).catch(error => {
-      console.error("❌ Background crawling job failed:", error);
-    });
+    
+    // Use setTimeout to ensure the response is sent before starting the heavy crawling
+    setTimeout(() => {
+      startCrawlingJob(newJob.id, normalizedUrl, domain, site.id).catch(error => {
+        console.error("❌ Background crawling job failed:", error);
+        // Mark job as error if it fails
+        prisma.crawlJob.update({
+          where: { id: newJob.id },
+          data: { 
+            status: "error",
+            finishedAt: new Date(),
+          },
+        }).catch(updateError => {
+          console.error("❌ Failed to update job status to error:", updateError);
+        });
+      });
+    }, 100); // Small delay to ensure response is sent first
     
     // Return started response
     const startedResponse = StartedResponseSchema.parse({
@@ -165,7 +179,7 @@ async function startCrawlingJob(jobId: string, startUrl: string, domain: string,
       siteId: siteId,
       startUrl,
       onEvent: async (event) => {
-        console.log("📡 Crawl event received:", event.type, event.url || "no url");
+        console.log("📡 Crawl event received:", event.type, "url" in event ? event.url : "no url");
         
         // Track basic progress and update database
         if (event.type === "page") {
@@ -174,17 +188,18 @@ async function startCrawlingJob(jobId: string, startUrl: string, domain: string,
           
           // Update progress in database every 5 pages
           if (pagesScanned % 5 === 0) {
-            console.log(`💾 Updating database with ${pagesScanned} pages...`);
-            await prisma.crawlJob.update({
-              where: { id: jobId },
-              data: { pagesScanned },
-            });
-            console.log(`✅ Database updated with ${pagesScanned} pages`);
+            console.log(`💾 Would update database with ${pagesScanned} pages...`);
+            // TODO: Uncomment after migration is applied
+            // await prisma.crawlJob.update({
+            //   where: { id: jobId },
+            //   data: { pagesScanned },
+            // });
+            console.log(`✅ Database update skipped (migration pending)`);
           }
         } else if (event.type === "done") {
           console.log(`✅ Crawling completed, processed ${pagesScanned} pages`);
-        } else if (event.type === "error") {
-          console.error(`❌ Crawl error:`, event.error);
+        } else if (event.type === "status") {
+          console.log(`📊 Crawl status:`, event.message);
         }
       },
     });
