@@ -109,7 +109,7 @@ export async function POST(req: NextRequest) {
   }
 }
 
-// Background crawling function (placeholder)
+// Background crawling function - uses real Pathfinder crawler
 async function startCrawlingJob(jobId: string, startUrl: string, domain: string, maxPages: number) {
   try {
     // Update job status to running
@@ -121,39 +121,70 @@ async function startCrawlingJob(jobId: string, startUrl: string, domain: string,
       },
     });
     
-    // TODO: Implement actual crawling logic here
-    // For now, create a mock result
-    await new Promise(resolve => setTimeout(resolve, 2000)); // Simulate work
+    // Create or find the Site record
+    let site = await prisma.site.findUnique({
+      where: { domain },
+    });
     
-    // Create mock page scores
-    const mockPages = [
-      {
-        url: startUrl,
-        title: "Home Page",
-        score: 0.95,
-        rank: 1,
-        signalsJson: { reasons: ["Main landing page", "High traffic"] },
-      },
-      {
-        url: `${new URL(startUrl).origin}/about`,
-        title: "About Us",
-        score: 0.85,
-        rank: 2,
-        signalsJson: { reasons: ["About page", "Good content"] },
-      },
-    ];
-    
-    // Save page scores
-    for (const page of mockPages) {
-      await prisma.pageScore.create({
+    if (!site) {
+      site = await prisma.site.create({
         data: {
-          jobId,
-          url: page.url,
-          title: page.title,
-          score: page.score,
-          rank: page.rank,
-          signalsJson: page.signalsJson,
+          domain,
+          startUrl,
         },
+      });
+    }
+    
+    // Use the real Pathfinder crawler
+    const { crawlSite } = await import("@/lib/crawler");
+    
+    await crawlSite({
+      siteId: site.id,
+      startUrl,
+      onEvent: async (event) => {
+        if (event.type === "page" && event.ok && event.pageId) {
+          // Create a page score for each crawled page
+          const page = await prisma.page.findUnique({
+            where: { id: event.pageId },
+            select: { url: true, title: true, content: true }
+          });
+          
+          if (page) {
+            // Simple scoring based on content length and title quality
+            const score = calculatePageScore({
+              url: page.url,
+              title: page.title || "",
+              content: page.content || "",
+              isHomePage: page.url === startUrl,
+            });
+            
+            await prisma.pageScore.create({
+              data: {
+                jobId,
+                url: page.url,
+                title: (page.title || "Untitled").slice(0, 512),
+                score,
+                rank: 0, // Will be updated after all pages are processed
+                signalsJson: {
+                  reasons: generateReasons(score, page.url, page.title),
+                },
+              },
+            });
+          }
+        }
+      },
+    });
+    
+    // Update ranks based on scores
+    const pageScores = await prisma.pageScore.findMany({
+      where: { jobId },
+      orderBy: { score: 'desc' },
+    });
+    
+    for (let i = 0; i < pageScores.length; i++) {
+      await prisma.pageScore.update({
+        where: { id: pageScores[i].id },
+        data: { rank: i + 1 },
       });
     }
     
@@ -178,4 +209,64 @@ async function startCrawlingJob(jobId: string, startUrl: string, domain: string,
       },
     });
   }
+}
+
+function calculatePageScore(args: {
+  url: string;
+  title: string;
+  content: string;
+  isHomePage: boolean;
+}): number {
+  const { url, title, content, isHomePage } = args;
+  let score = 0;
+
+  // Home page gets highest score
+  if (isHomePage) {
+    score += 0.4;
+  }
+
+  // Title quality
+  if (title && title.length > 10) {
+    score += 0.2;
+  }
+
+  // Content length (more content = higher score)
+  const contentLength = content.length;
+  if (contentLength > 1000) {
+    score += 0.2;
+  } else if (contentLength > 500) {
+    score += 0.1;
+  }
+
+  // URL structure (shorter paths often better)
+  const urlPath = new URL(url).pathname;
+  const pathDepth = urlPath.split('/').length - 1;
+  if (pathDepth <= 2) {
+    score += 0.1;
+  }
+
+  // Ensure score is between 0 and 1
+  return Math.min(Math.max(score, 0), 1);
+}
+
+function generateReasons(score: number, url: string, title?: string): string[] {
+  const reasons: string[] = [];
+  
+  if (score >= 0.8) {
+    reasons.push("High-quality content");
+  }
+  
+  if (title && title.length > 10) {
+    reasons.push("Clear page title");
+  }
+  
+  if (url.endsWith('/') || url.split('/').length <= 3) {
+    reasons.push("Main section page");
+  }
+  
+  if (reasons.length === 0) {
+    reasons.push("Standard page");
+  }
+  
+  return reasons.slice(0, 3); // Max 3 reasons
 }
