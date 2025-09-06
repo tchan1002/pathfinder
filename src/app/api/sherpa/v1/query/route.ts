@@ -49,15 +49,62 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // For now, return a simple response to test the flow
+    // Use the real Pathfinder query logic
+    console.log(`🔍 Querying site ${site.id} with question: "${question}"`);
+    
+    // Get pages for the site
+    const pages = await prisma.page.findMany({
+      where: { siteId: site.id },
+      select: {
+        id: true,
+        url: true,
+        title: true,
+        content: true,
+        lastCrawledAt: true,
+      },
+      orderBy: { lastCrawledAt: "desc" },
+    });
+    
+    console.log(`🔍 Found ${pages.length} pages for query`);
+    
+    if (pages.length === 0) {
+      return NextResponse.json({
+        answer: "No pages found for this site. The crawling may not be complete yet.",
+        sources: []
+      });
+    }
+    
+    // For now, do a simple text search across pages
+    // TODO: Replace with proper AI/embedding search
+    const searchResults = pages.filter(page => {
+      const searchText = `${page.title || ''} ${page.content || ''}`.toLowerCase();
+      return searchText.includes(question.toLowerCase());
+    });
+    
+    if (searchResults.length === 0) {
+      return NextResponse.json({
+        answer: `I couldn't find information about "${question}" in the crawled pages. The site may not contain this information, or the crawling may not be complete yet.`,
+        sources: pages.slice(0, 3).map(page => ({
+          url: page.url,
+          title: page.title || 'Untitled',
+          snippet: (page.content || '').substring(0, 200) + '...',
+          screenshotUrl: undefined,
+        }))
+      });
+    }
+    
+    // Return the first matching result
+    const bestMatch = searchResults[0];
+    const answer = `Based on the crawled content, here's what I found about "${question}":\n\n${(bestMatch.content || '').substring(0, 500)}${(bestMatch.content || '').length > 500 ? '...' : ''}`;
+    
     return NextResponse.json({
-      answer: `UPDATED: Test answer for question: "${question}" on site: ${job.domain}`,
-      sources: [{
-        url: `https://${job.domain}`,
-        title: `Homepage of ${job.domain}`,
-        snippet: "This is an updated test response",
+      answer,
+      sources: searchResults.slice(0, 3).map(page => ({
+        url: page.url,
+        title: page.title || 'Untitled',
+        snippet: (page.content || '').substring(0, 200) + '...',
         screenshotUrl: undefined,
-      }]
+      }))
     });
     
   } catch (e) {
