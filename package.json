@@ -5,7 +5,7 @@
   "scripts": {
     "dev": "next dev --turbopack",
     "postinstall": "prisma generate && if [ -z \"$CI\" ]; then npx playwright install; else echo 'Skipping playwright install in CI'; fi",
-    "build": "prisma generate && prisma migrate deploy && next build --turbopack",
+    "build": "./scripts/build.sh",
     "start": "next start",
     "lint": "eslint",
     "prisma:generate": "prisma generate",
