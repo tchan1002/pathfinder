@@ -1,10 +1,22 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { 
-  createErrorResponse,
-  normalizeUrl,
-  extractDomain
-} from "@/lib/sherpa-utils";
+import { normalizeUrl } from "@/lib/url";
+
+function extractDomain(url: string): string {
+  try {
+    return new URL(url).hostname;
+  } catch {
+    return url;
+  }
+}
+
+function createErrorResponse(errorCode: string, message: string) {
+  return {
+    error_code: errorCode,
+    error_message: message,
+    request_id: crypto.randomUUID(),
+  };
+}
 
 export async function POST(req: NextRequest) {
   try {

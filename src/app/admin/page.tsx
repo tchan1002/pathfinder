@@ -12,11 +12,6 @@ export default async function AdminPage() {
     orderBy: { createdAt: "desc" },
   });
 
-  console.log("Admin page - Found sites:", sites.length);
-  sites.forEach(site => {
-    console.log(`Site: ${site.domain} (${site.id}) - ${site.pages.length} pages`);
-  });
-
   return (
     <div className="p-6 space-y-8">
       <div className="flex items-center justify-between">
@@ -26,11 +21,6 @@ export default async function AdminPage() {
             Refresh
           </button>
         </form>
-      </div>
-      <div className="bg-gray-100 p-4 rounded mb-4">
-        <h3 className="font-semibold mb-2">Debug Info:</h3>
-        <p>Total sites found: {sites.length}</p>
-        <p>Last updated: {new Date().toLocaleString()}</p>
       </div>
       <div className="grid gap-6">
         {sites.map((s: { id: string; domain: string; pages: Array<{ id: string }> }) => (
