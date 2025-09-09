@@ -128,15 +128,14 @@ Which result best answers the query? (Return only the index number):`
 }
 
 /**
- * Generates a comprehensive answer based on the chosen page content
+ * Generates a witty, conversational answer like a mountain guide
  */
 export async function generateAnswerFromPage(
   originalQuery: string,
   chosenPage: SearchResult
 ): Promise<string> {
   if (!openai) {
-    // Fallback: return a simple summary
-    return chosenPage.summary || "No summary available.";
+    return generateSimpleGuideAnswer(originalQuery, chosenPage);
   }
 
   try {
@@ -148,15 +147,21 @@ export async function generateAnswerFromPage(
       messages: [
         {
           role: "system",
-          content: `You are a helpful assistant that answers questions based on web page content. 
+          content: `You're a knowledgeable mountain guide who gives direct, helpful answers. Be friendly, confident, and straight to the point.
+
+          RULES:
+          - ALWAYS under 50 words
+          - Be conversational but not overly casual
+          - Start with "Here's what you're looking for:" or similar
+          - Give main points, not summaries
+          - Use confident, helpful language
+          - If you don't know, say so directly
+          - Be gender-neutral and inclusive
           
-          Guidelines:
-          - Answer the user's question directly and comprehensively
-          - Use information from the provided page content
-          - If the page doesn't contain enough information to answer the question, say so
-          - Keep answers concise but informative
-          - Include relevant details and context
-          - Cite the page title when relevant`
+          Examples:
+          - "Here's what you're looking for: Login button's in the top right corner. Just click it and you're in."
+          - "The pricing starts at $29/month for the basic plan. Pretty solid value if you ask me. Check out the pricing page for all the details."
+          - "Here's what you need: Contact info is right there on the page. Phone, email, the works. Can't miss it."`
         },
         {
           role: "user",
@@ -165,16 +170,37 @@ export async function generateAnswerFromPage(
 Page: ${pageTitle}
 Content: ${pageContent.slice(0, 4000)}
 
-Answer:`
+Give me a mountain guide style answer:`
         }
       ],
-      temperature: 0.2,
-      max_tokens: 500,
+      temperature: 0.6, // Higher for more personality
+      max_tokens: 80, // Keep it short
     });
 
-    return completion.choices[0]?.message.content?.trim() || "Unable to generate answer.";
+    return completion.choices[0]?.message.content?.trim() || generateSimpleGuideAnswer(originalQuery, chosenPage);
   } catch (error) {
     console.error("Answer generation failed:", error);
-    return chosenPage.summary || "Unable to generate answer.";
+    return generateSimpleGuideAnswer(originalQuery, chosenPage);
   }
+}
+
+/**
+ * Simple fallback answer in mountain guide style
+ */
+function generateSimpleGuideAnswer(query: string, chosenPage: SearchResult): string {
+  const title = chosenPage.title || "";
+  const summary = chosenPage.summary || "";
+  
+  // Extract key info from summary
+  const keyPoints = summary.split('.').slice(0, 2).join('.').trim();
+  
+  if (keyPoints.length > 20) {
+    return `Here's what you're looking for: ${keyPoints} Check out ${title} for the full details.`;
+  }
+  
+  if (title) {
+    return `Here's the deal: Found info about ${title}. That's what you're after, right?`;
+  }
+  
+  return "Here's what I found: Some relevant info on this page. Worth checking out.";
 }
