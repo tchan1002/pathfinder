@@ -97,7 +97,7 @@ export async function crawlSite(args: { siteId: string; startUrl: string; onEven
           }
         }
 
-        const { title, description, text } = extractMainContent(html);
+        const { title, description, text, headers, diverseClips, metadata } = extractMainContent(html);
 
         const urlNormalized = normalizeUrl(current);
         const content = text ?? "";
@@ -134,19 +134,35 @@ export async function crawlSite(args: { siteId: string; startUrl: string; onEven
           } catch {}
         }
 
-        // naive summary cache
+        // Enhanced summary generation using diverse content
         const existingSummary = await prisma.summary
           .findUnique({ where: { pageId_textHash: { pageId: savedPage.id, textHash: contentHash } } })
           .catch(() => null);
         let summaryText: string | undefined = existingSummary?.text;
         if (!summaryText && content) {
-          summaryText = summarizeLocal(content);
-          await prisma.summary.create({ data: { pageId: savedPage.id, text: summaryText, textHash: contentHash, model: "local-naive" } });
+          summaryText = generateEnhancedSummary({
+            title: title || undefined,
+            description: description || undefined,
+            headers: headers || undefined,
+            diverseClips: diverseClips || undefined,
+            metadata: metadata || undefined,
+            mainContent: content
+          });
+          await prisma.summary.create({ data: { pageId: savedPage.id, text: summaryText, textHash: contentHash, model: "enhanced-local" } });
         }
 
-        // insert embedding with fallbacks (content -> title -> metaDescription -> url)
+        // insert embedding with enhanced content (prioritize headers and diverse clips)
         try {
-          const embedSource = (content || title || description || current).slice(0, 8000);
+          const enhancedContent = createEnhancedEmbeddingContent({
+            title: title || undefined,
+            description: description || undefined,
+            headers: headers || undefined,
+            diverseClips: diverseClips || undefined,
+            metadata: metadata || undefined,
+            mainContent: content
+          });
+          
+          const embedSource = enhancedContent.slice(0, 8000);
           if (embedSource) {
             const vec = await (await import("@/lib/embeddings")).embedText384(embedSource);
             const v = '[' + vec.map((n) => Number(n).toFixed(6)).join(',') + ']';
@@ -192,9 +208,96 @@ function sha256(input: string): string {
   return crypto.createHash("sha256").update(input).digest("hex");
 }
 
-function summarizeLocal(text: string): string {
-  const words = text.replace(/\s+/g, " ").trim().split(" ");
-  return words.slice(0, 45).join(" ");
+// Legacy function - kept for compatibility but not used in enhanced version
+// function summarizeLocal(text: string): string {
+//   const words = text.replace(/\s+/g, " ").trim().split(" ");
+//   return words.slice(0, 45).join(" ");
+// }
+
+interface EnhancedContentData {
+  title?: string | undefined;
+  description?: string | undefined;
+  headers?: string[] | undefined;
+  diverseClips?: string[] | undefined;
+  metadata?: {
+    h1?: string[];
+    h2?: string[];
+    h3?: string[];
+    metaKeywords?: string | undefined;
+    ogTitle?: string | undefined;
+    ogDescription?: string | undefined;
+  } | undefined;
+  mainContent?: string | undefined;
+}
+
+function generateEnhancedSummary(data: EnhancedContentData): string {
+  const parts: string[] = [];
+  
+  // Prioritize title and description
+  if (data.title) parts.push(data.title);
+  if (data.description) parts.push(data.description);
+  
+  // Add key headers (H1, H2) for structure
+  if (data.headers && data.headers.length > 0) {
+    const keyHeaders = data.headers.slice(0, 5); // Top 5 headers
+    parts.push(...keyHeaders);
+  }
+  
+  // Add diverse clips for comprehensive coverage
+  if (data.diverseClips && data.diverseClips.length > 0) {
+    const selectedClips = data.diverseClips.slice(0, 8); // Top 8 clips
+    parts.push(...selectedClips);
+  }
+  
+  // Fallback to main content if needed
+  if (parts.length === 0 && data.mainContent) {
+    const words = data.mainContent.replace(/\s+/g, " ").trim().split(" ");
+    return words.slice(0, 45).join(" ");
+  }
+  
+  // Combine and limit to reasonable length
+  const combined = parts.join(" ").replace(/\s+/g, " ").trim();
+  const words = combined.split(" ");
+  return words.slice(0, 60).join(" "); // Slightly longer than before
+}
+
+function createEnhancedEmbeddingContent(data: EnhancedContentData): string {
+  const parts: string[] = [];
+  
+  // Prioritize metadata and headers for better vector search
+  if (data.title) parts.push(`Title: ${data.title}`);
+  if (data.description) parts.push(`Description: ${data.description}`);
+  
+  // Add structured metadata
+  if (data.metadata) {
+    if (data.metadata.ogTitle) parts.push(`OG Title: ${data.metadata.ogTitle}`);
+    if (data.metadata.ogDescription) parts.push(`OG Description: ${data.metadata.ogDescription}`);
+    if (data.metadata.metaKeywords) parts.push(`Keywords: ${data.metadata.metaKeywords}`);
+    
+    if (data.metadata.h1 && data.metadata.h1.length > 0) {
+      parts.push(`H1: ${data.metadata.h1.join(", ")}`);
+    }
+    if (data.metadata.h2 && data.metadata.h2.length > 0) {
+      parts.push(`H2: ${data.metadata.h2.slice(0, 5).join(", ")}`);
+    }
+  }
+  
+  // Add headers for context
+  if (data.headers && data.headers.length > 0) {
+    parts.push(`Headers: ${data.headers.slice(0, 10).join(", ")}`);
+  }
+  
+  // Add diverse clips for comprehensive content coverage
+  if (data.diverseClips && data.diverseClips.length > 0) {
+    parts.push(`Content: ${data.diverseClips.slice(0, 10).join(" ")}`);
+  }
+  
+  // Fallback to main content
+  if (parts.length === 0 && data.mainContent) {
+    return data.mainContent;
+  }
+  
+  return parts.join(" ");
 }
 
 
