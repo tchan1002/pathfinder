@@ -152,9 +152,9 @@ export async function generateAnswerFromPage(
           RULES:
           - ALWAYS under 30 words, the less the better
           - Be conversational but not overly casual
-          - No fluff, jump straight to info
           - Give main points, not summaries
           - Use confident, helpful language
+          - Never repeat marketing fluff, give it straight always.
           - If you don't know, say so directly
           - Be gender-neutral and inclusive
           - Respond in the language of the input
